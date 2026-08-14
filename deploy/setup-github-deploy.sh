@@ -9,6 +9,8 @@ source "$SCRIPT_DIR/production.env"
 
 mkdir -p /root/.ssh
 chmod 700 /root/.ssh
+touch /root/.ssh/known_hosts
+ssh-keyscan -t ed25519 github.com >> /root/.ssh/known_hosts 2>/dev/null || true
 
 ACTIONS_KEY="/root/.ssh/github_actions_vps"
 PULL_KEY="/root/.ssh/github_vps_pull"
@@ -34,12 +36,12 @@ Host ${GIT_SSH_HOST}
 EOF
 chmod 600 /root/.ssh/config
 
-SSH_REPO="git@${GIT_SSH_HOST}:Sabrin-Dahir/vital-online-app.git"
 cd "$APP_DIR"
 if [ ! -d .git ]; then
   git clone "$GITHUB_REPO" "$APP_DIR" || true
 fi
-git remote set-url origin "$SSH_REPO" 2>/dev/null || git remote add origin "$SSH_REPO"
+# Keep HTTPS origin so auto-deploy can pull without GitHub SSH host keys.
+git remote set-url origin "$GITHUB_REPO" 2>/dev/null || git remote add origin "$GITHUB_REPO"
 
 echo
 echo "========== GitHub setup (do this once) =========="

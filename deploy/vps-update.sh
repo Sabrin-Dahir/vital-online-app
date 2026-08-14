@@ -8,6 +8,12 @@ source "$SCRIPT_DIR/production.env"
 
 cd "$APP_DIR"
 
+mkdir -p /root/.ssh
+touch /root/.ssh/known_hosts
+ssh-keyscan -t ed25519 github.com >> /root/.ssh/known_hosts 2>/dev/null || true
+
+# Public HTTPS clone — avoids GitHub SSH host-key failures on first deploy.
+git remote set-url origin "$GITHUB_REPO"
 git fetch origin main
 git checkout main
 git reset --hard origin/main
