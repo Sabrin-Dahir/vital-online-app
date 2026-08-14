@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 
 /// Central API configuration for Flutter (Android / iOS / web / desktop).
 ///
-/// **Release / profile builds always use the production Render API** — never
+/// **Release / profile builds always use the production Contabo API** — never
 /// localhost. That is required so an installed Android APK can reach the
 /// backend from a real device.
 ///
@@ -10,7 +10,7 @@ import 'package:flutter/foundation.dart';
 /// Override anytime with `--dart-define`:
 ///   flutter run --dart-define=API_URL=http://10.0.2.2:5050/api
 ///   flutter run --dart-define=API_HOST=192.168.1.10 --dart-define=API_PORT=5050
-///   flutter run --dart-define=API_URL=https://vital-online-app.onrender.com/api
+///   flutter run --dart-define=API_URL=https://169.58.179.28.sslip.io/api
 class ApiConfig {
   /// Full base URL override, e.g. `https://host/api`. Wins over everything else.
   static const String _urlOverride = String.fromEnvironment('API_URL');
@@ -18,8 +18,8 @@ class ApiConfig {
   static const String _portOverride = String.fromEnvironment('API_PORT');
   static const String _schemeOverride = String.fromEnvironment('API_SCHEME');
 
-  /// Production API (Render). Default for release / profile builds.
-  static const String _prodHost = 'vital-online-app.onrender.com';
+  /// Production API (Contabo VPS, HTTPS via Let's Encrypt + sslip.io).
+  static const String _prodHost = '169.58.179.28.sslip.io';
 
   /// Local API for `flutter run` / debug (simulator, desktop, Chrome).
   static const String _localHost = '127.0.0.1';

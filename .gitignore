@@ -46,5 +46,12 @@ mobile/**/*.map.json
 backend/uploads/
 backend/tmp/
 
+# VPS deploy secrets (never commit)
+deploy/contabo.env
+deploy/*.secret
+
+# Built APKs (too large for git)
+mobile/releases/
+
 # Tesseract OCR language data (downloaded at runtime)
 *.traineddata

@@ -7,6 +7,9 @@ Vital fitness app/
 └── mobile/     # Flutter app (User + Coach)
 ```
 
+**Production:** https://169.58.179.28.sslip.io  
+**GitHub:** https://github.com/Sabrin-Dahir/vital-online-app
+
 **How they connect:** see [INTEGRATION.md](./INTEGRATION.md)  
 **Database relationships:** see [DATABASE.md](./DATABASE.md)
 
