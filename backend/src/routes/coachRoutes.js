@@ -30,6 +30,7 @@ const {
 } = require('../controllers/coachController');
 const {
   getCoachRequests,
+  getCoachRequestDetail,
   approveCoachRequest,
   rejectCoachRequest,
 } = require('../controllers/coachRequestController');
@@ -142,6 +143,10 @@ router.post('/appointments/:id/attachments', addAppointmentAttachment);
 router.post('/appointments/:id/follow-up', createFollowUpAppointment);
 
 router.get('/requests', getCoachRequests);
+router.get('/requests/:id', [
+  objectIdParam('id', 'Request'),
+  handleValidation,
+], getCoachRequestDetail);
 router.patch('/requests/:id/approve', approveCoachRequest);
 router.patch('/requests/:id/reject', rejectCoachRequest);
 router.get('/clients', getClients);

@@ -2344,6 +2344,17 @@ class ApiService {
     throw Exception(_parseError(response));
   }
 
+  Future<Map<String, dynamic>> getCoachRequestDetail(String id) async {
+    final response = await _send(http.get(
+      Uri.parse('$baseUrl/coach/requests/$id'),
+      headers: _headers(),
+    ));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception(_parseError(response));
+  }
+
   Future<Map<String, dynamic>> approveCoachRequest(
     String id, {
     String? classId,

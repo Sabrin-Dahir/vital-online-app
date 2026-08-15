@@ -329,55 +329,81 @@ class CoachHomeTabState extends State<CoachHomeTab> with TabRefreshMixin {
         ..._pendingClientRequests.take(3).map((request) {
           final user = request['user'] as Map<String, dynamic>? ?? {};
           final name = ApiService.displayName(user, fallback: 'Member');
-          final message = request['message'] as String? ?? '';
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            decoration: CoachDashboardTheme.cardDecoration(isDark),
-            padding: const EdgeInsets.all(14),
-            width: double.infinity,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                CoachDashboardTheme.avatarBox(
-                  initial: name.isNotEmpty ? name[0].toUpperCase() : 'U',
-                  size: 40,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Wants to join your coaching',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: CoachDashboardTheme.warning,
+          final goal = (user['fitness_goal'] ?? user['fitnessGoal'] ?? '').toString().trim();
+          final location = (user['location'] ?? user['region'] ?? '').toString().trim();
+          final photo = (user['avatar'] ?? user['photoUrl'] ?? '').toString();
+          return InkWell(
+            onTap: () {
+              if (widget.onViewClientRequests != null) {
+                widget.onViewClientRequests!();
+              } else {
+                widget.onNavigate(1);
+              }
+            },
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: CoachDashboardTheme.cardDecoration(isDark),
+              padding: const EdgeInsets.all(14),
+              width: double.infinity,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  if (photo.isNotEmpty)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: Image.network(
+                        photo,
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => CoachDashboardTheme.avatarBox(
+                          initial: name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                          size: 40,
                         ),
                       ),
-                      if (message.isNotEmpty) ...[
-                        const SizedBox(height: 4),
+                    )
+                  else
+                    CoachDashboardTheme.avatarBox(
+                      initial: name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                      size: 40,
+                    ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                        const SizedBox(height: 2),
                         Text(
-                          message,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                          goal.isNotEmpty ? 'Fitness Goal: $goal' : 'Pending request',
                           style: TextStyle(
-                            fontSize: 13,
-                            height: 1.35,
-                            color: isDark ? Colors.white54 : CoachDashboardTheme.textSecondary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: CoachDashboardTheme.warning,
                           ),
                         ),
+                        if (location.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            'Location: $location',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isDark ? Colors.white54 : CoachDashboardTheme.textSecondary,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: isDark ? Colors.white38 : CoachDashboardTheme.textSecondary,
-                ),
-              ],
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: isDark ? Colors.white38 : CoachDashboardTheme.textSecondary,
+                  ),
+                ],
+              ),
             ),
           );
         }),

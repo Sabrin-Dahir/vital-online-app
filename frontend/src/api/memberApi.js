@@ -85,6 +85,9 @@ export const cancelCoachRequest = () =>
 export const getCoachIncomingRequests = () =>
   api.get("/coach/requests").then((r) => (Array.isArray(r.data) ? r.data : []));
 
+export const getCoachIncomingRequestDetail = (id) =>
+  api.get(`/coach/requests/${id}`).then((r) => r.data);
+
 export const approveCoachRequest = (id, body = {}) =>
   api.patch(`/coach/requests/${id}/approve`, body).then((r) => r.data);
 

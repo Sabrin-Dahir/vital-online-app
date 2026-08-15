@@ -11,6 +11,11 @@ const {
   buildMemberVisibleCoachFilter,
 } = require('../utils/coachProfile');
 const { backfillGroupPlanAccess } = require('../utils/backfillGroupPlanAccess');
+const {
+  REQUESTER_USER_SELECT,
+  REQUESTER_PROFILE_SELECT,
+  formatCoachRequestForCoach,
+} = require('../utils/coachVisibleRequester');
 
 const USER_DISPLAY_SELECT = 'full_name username phone role status';
 
@@ -160,6 +165,26 @@ async function getMyCoachRequest(req, res) {
   }
 }
 
+async function loadCoachOwnedRequest(requestId, coachId, { pendingOnly = false } = {}) {
+  const filter = {
+    _id: requestId,
+    coach: coachId,
+  };
+  if (pendingOnly) filter.status = 'pending';
+
+  return CoachRequest.findOne(filter)
+    .populate({
+      path: 'user',
+      select: REQUESTER_USER_SELECT,
+      populate: {
+        path: 'profile',
+        select: REQUESTER_PROFILE_SELECT,
+      },
+    })
+    .populate('fitnessClass', 'title date category')
+    .lean();
+}
+
 async function getCoachRequests(req, res) {
   try {
     const requests = await CoachRequest.find({
@@ -168,13 +193,35 @@ async function getCoachRequests(req, res) {
     })
       .populate({
         path: 'user',
-        populate: { path: 'profile' },
+        select: REQUESTER_USER_SELECT,
+        populate: {
+          path: 'profile',
+          select: REQUESTER_PROFILE_SELECT,
+        },
       })
       .sort({ createdAt: -1 })
       .lean();
-    return res.json(requests);
+
+    return res.json(requests.map(formatCoachRequestForCoach));
   } catch (error) {
     return res.status(500).json({ message: 'Unable to load coach requests' });
+  }
+}
+
+/**
+ * Detailed requester profile for a single incoming request.
+ * Authorization: only the coach who owns the request may view it.
+ * Opening this endpoint does NOT approve the request.
+ */
+async function getCoachRequestDetail(req, res) {
+  try {
+    const request = await loadCoachOwnedRequest(req.params.id, req.user._id);
+    if (!request) {
+      return res.status(404).json({ message: 'Request not found' });
+    }
+    return res.json(formatCoachRequestForCoach(request));
+  } catch (error) {
+    return res.status(500).json({ message: 'Unable to load coach request details' });
   }
 }
 
@@ -360,6 +407,7 @@ module.exports = {
   cancelCoachRequest,
   getMyCoachRequest,
   getCoachRequests,
+  getCoachRequestDetail,
   approveCoachRequest,
   rejectCoachRequest,
 };
