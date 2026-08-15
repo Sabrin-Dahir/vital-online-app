@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../l10n/app_localizations.dart';
 import '../../../models/user_model.dart';
 import '../../../services/api_service.dart';
+import '../../../utils/somalia_regions.dart';
 import '../../../widgets/language_picker_sheet.dart';
 import '../../../widgets/scrollable_body.dart';
 import '../../../widgets/profile_avatar.dart';
@@ -71,7 +72,7 @@ class _CoachSettingsTabState extends State<CoachSettingsTab> {
     final profile = coach.profile;
     _bioController.text = profile?.bio ?? '';
     _experienceController.text = profile?.experience ?? '';
-    _specializationController.text = profile?.specialization.join(', ') ?? '';
+    _specializationController.text = (profile?.specialization ?? const <String>[]).join(', ');
     _certificationsController.text = profile?.certifications.join(', ') ?? '';
     _phoneController.text = coach.phone ?? profile?.phone ?? '';
     _photoUrl = profile?.photoUrl;
@@ -79,7 +80,7 @@ class _CoachSettingsTabState extends State<CoachSettingsTab> {
     _workingDays = List<String>.from(profile?.workingDays ?? const []);
     _appointmentDays = List<String>.from(profile?.appointmentDays ?? const []);
     _dayAvailability = List<dynamic>.from(profile?.dayAvailability ?? const []);
-    _location = profile?.location ?? '';
+    _location = SomaliaRegions.match(profile?.location) ?? '';
     _age = profile?.age;
     _appointmentDuration = profile?.appointmentDurationMinutes ?? 60;
     _workingHours = [
@@ -129,24 +130,30 @@ class _CoachSettingsTabState extends State<CoachSettingsTab> {
   Future<void> _saveProfile() async {
     setState(() => _isSaving = true);
     try {
-      final specs = _specializationController.text
-          .split(',')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
       final certs = _certificationsController.text
           .split(',')
           .map((s) => s.trim())
           .where((s) => s.isNotEmpty)
           .toList();
 
+      final locationError = SomaliaRegions.validate(_location);
+      if (locationError != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(locationError), backgroundColor: CoachDashboardTheme.danger),
+          );
+        }
+        setState(() => _isSaving = false);
+        return;
+      }
+
       final updatedProfile = await _api.updateProfile(
         bio: _bioController.text.trim(),
         experience: _experienceController.text.trim(),
-        specialization: specs,
         certifications: certs,
         phone: _phoneController.text.trim(),
         yearsExperience: _yearsExperience,
+        location: SomaliaRegions.match(_location) ?? _location,
       );
 
       final updatedUser = _coach.copyWith(
@@ -270,11 +277,14 @@ class _CoachSettingsTabState extends State<CoachSettingsTab> {
               const SizedBox(height: 14),
               TextField(
                 controller: _specializationController,
-                style: TextStyle(color: isDark ? Colors.white : CoachDashboardTheme.textPrimary),
+                readOnly: true,
+                enabled: false,
+                maxLines: 3,
+                style: TextStyle(color: isDark ? Colors.white70 : CoachDashboardTheme.textPrimary),
                 decoration: CoachDashboardTheme.fieldDecoration(
                   isDark: isDark,
-                  label: 'Specializations',
-                  hint: 'Weight Loss, Strength Training',
+                  label: 'Specializations (set by Admin)',
+                  hint: 'Contact admin to change',
                   prefixIcon: Icons.fitness_center_outlined,
                 ),
               ),
@@ -288,6 +298,29 @@ class _CoachSettingsTabState extends State<CoachSettingsTab> {
                   hint: 'ACE, NASM, ...',
                   prefixIcon: Icons.verified_outlined,
                 ),
+              ),
+              const SizedBox(height: 14),
+              DropdownButtonFormField<String>(
+                value: SomaliaRegions.contains(_location) ? _location : null,
+                isExpanded: true,
+                decoration: CoachDashboardTheme.fieldDecoration(
+                  isDark: isDark,
+                  label: 'Region / Gobol *',
+                  hint: 'Select Somali region',
+                  prefixIcon: Icons.location_on_outlined,
+                ),
+                items: SomaliaRegions.all
+                    .map(
+                      (region) => DropdownMenuItem(
+                        value: region,
+                        child: Text(region, overflow: TextOverflow.ellipsis),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (region) {
+                  if (region == null) return;
+                  setState(() => _location = region);
+                },
               ),
               const SizedBox(height: 16),
               CertificateFilesGallery(
@@ -477,7 +510,6 @@ class _CoachSettingsTabState extends State<CoachSettingsTab> {
   Widget _readOnlyInfoGrid(bool isDark) {
     final items = <MapEntry<String, String>>[
       if (_age != null) MapEntry('Age', '$_age'),
-      if (_location.isNotEmpty) MapEntry('Location', _location),
       if (_yearsExperience != null) MapEntry('Years experience', '$_yearsExperience'),
       if (_appointmentDuration > 0) MapEntry('Appointment duration', '$_appointmentDuration min'),
       if (_workingHours.isNotEmpty) MapEntry('Working hours', _workingHours),

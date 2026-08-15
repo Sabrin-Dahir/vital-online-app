@@ -61,8 +61,8 @@ export default function MemberProgressPage() {
   async function submitWeight(event) {
     event.preventDefault();
     const weight = Number(weightInput);
-    if (!Number.isFinite(weight) || weight < 2) {
-      toast.error("Enter a valid weight in kg");
+    if (!Number.isFinite(weight) || weight < 20 || weight > 300) {
+      toast.error("Weight must be between 20 kg and 300 kg.");
       return;
     }
     setLogging("weight");
@@ -134,7 +134,8 @@ export default function MemberProgressPage() {
           <p className="text-sm font-semibold">Weight (kg)</p>
           <input
             type="number"
-            min="2"
+            min="20"
+            max="300"
             step="0.1"
             value={weightInput}
             onChange={(e) => setWeightInput(e.target.value)}
@@ -143,7 +144,9 @@ export default function MemberProgressPage() {
           />
           <p className="mt-2 text-xs text-[var(--vf-muted)]">
             Current: {progress?.summary?.weightKg ?? "—"} kg
-            {progress?.summary?.bmi != null ? ` · BMI ${progress.summary.bmi}` : ""}
+            {progress?.summary?.bmi != null
+              ? ` · BMI ${progress.summary.bmi}${progress?.summary?.bmiCategory ? ` (${progress.summary.bmiCategory})` : ""}`
+              : ""}
           </p>
           <Button type="submit" className="mt-3 w-full" size="sm" disabled={logging === "weight"}>
             {"Log weight"}

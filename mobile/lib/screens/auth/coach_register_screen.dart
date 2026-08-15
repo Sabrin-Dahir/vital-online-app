@@ -6,7 +6,9 @@ import 'package:image_picker/image_picker.dart';
 import '../../models/user_model.dart';
 import '../../services/api_service.dart';
 import '../../utils/password_utils.dart';
-import '../../utils/somalia_cities.dart';
+import '../../utils/field_validation.dart';
+import '../../utils/somalia_regions.dart';
+import '../../utils/coach_specialization.dart';
 import '../../widgets/scrollable_body.dart';
 import '../dashboard/widgets/coach_home/coach_dashboard_theme.dart';
 import 'auth_home.dart';
@@ -65,11 +67,14 @@ class CoachRegisterScreen extends StatefulWidget {
   final User? existingUser;
   /// When true, show saved registration details without editing/submitting.
   final bool viewOnly;
+  /// Admin fills the same coach registration flow; does not sign in as the new coach.
+  final bool adminCreating;
 
   const CoachRegisterScreen({
     super.key,
     this.existingUser,
     this.viewOnly = false,
+    this.adminCreating = false,
   });
 
   @override
@@ -94,6 +99,38 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
   final _yearsExperienceController = TextEditingController();
   final _certificationsController = TextEditingController();
   final _specializationController = TextEditingController();
+  String? _selectedSpecialization;
+  final Set<String> _selectedSpecializations = {};
+  static const _specializationOptions = [
+    'General Fitness',
+    'Weight Loss',
+    'Weight Gain',
+    'Nutrition',
+    'Muscle Building',
+    'Strength Training',
+    'Bodybuilding',
+    'Cardio & Endurance',
+    'HIIT',
+    'Functional Training',
+    'Personal Training',
+    'Fitness for Beginners',
+    "Women's Fitness",
+    "Men's Fitness",
+    'Senior Fitness',
+    'Youth Fitness',
+    'Sports Training',
+    'Athletic Performance',
+    'Flexibility & Mobility',
+    'Yoga & Mindfulness',
+    'Posture & Corrective Exercise',
+    'Injury Prevention',
+    'Rehabilitation & Recovery',
+    'Pre/Postnatal Fitness',
+    'Lifestyle & Wellness',
+    'Meal Planning',
+    'Healthy Eating',
+    'Weight Management',
+  ];
   final _bioController = TextEditingController();
   final _experienceController = TextEditingController();
   final _messageController = TextEditingController();
@@ -171,7 +208,12 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
         final savedLocation =
             (application['location'] ?? user?.profile?.location ?? '').toString();
         _locationController.text =
-            SomaliaCities.match(savedLocation) ?? savedLocation.trim();
+            SomaliaRegions.match(savedLocation) ?? '';
+        // Keep legacy non-region values visible only until coach re-selects a region.
+        if (_locationController.text.isEmpty && savedLocation.trim().isNotEmpty) {
+          // Leave empty so the dropdown forces a valid region pick.
+          _locationController.text = '';
+        }
         final years = application['yearsExperience'] ?? user?.profile?.yearsExperience;
         if (years != null) _yearsExperienceController.text = years.toString();
         _certificationsController.text = (application['certifications'] ?? '').toString();
@@ -184,6 +226,7 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
             user?.profile?.specialization.isNotEmpty == true) {
           _specializationController.text = user!.profile!.specialization.join(', ');
         }
+        _syncSpecializationSelection(_specializationController.text);
         _bioController.text = (application['bio'] ?? user?.profile?.bio ?? '').toString();
         _experienceController.text =
             (application['experience'] ?? user?.profile?.experience ?? '').toString();
@@ -261,12 +304,13 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
         if (profile.age != null) _ageController.text = profile.age.toString();
         final profileLocation = profile.location ?? '';
         _locationController.text =
-            SomaliaCities.match(profileLocation) ?? profileLocation.trim();
+            SomaliaRegions.match(profileLocation) ?? '';
         if (profile.yearsExperience != null) {
           _yearsExperienceController.text = profile.yearsExperience.toString();
         }
         _certificationsController.text = profile.certifications.join(', ');
         _specializationController.text = profile.specialization.join(', ');
+        _syncSpecializationSelection(_specializationController.text);
         _bioController.text = profile.bio ?? '';
         _experienceController.text = profile.experience ?? '';
         _existingCertificateFiles
@@ -302,6 +346,58 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
     }
   }
 
+  void _syncSpecializationSelection(String raw) {
+    _selectedSpecializations
+      ..clear()
+      ..addAll(
+        raw
+            .split(',')
+            .map((part) => part.trim())
+            .where((part) => _specializationOptions.contains(part)),
+      );
+    // Legacy single values
+    if (_selectedSpecializations.isEmpty) {
+      final lower = raw.trim().toLowerCase();
+      if (lower.contains('nutrition')) _selectedSpecializations.add('Nutrition');
+      if (lower.contains('weight loss')) _selectedSpecializations.add('Weight Loss');
+      if (lower == 'general' || lower.contains('general fitness')) {
+        _selectedSpecializations.add('General Fitness');
+      }
+    }
+    _selectedSpecialization =
+        _selectedSpecializations.isEmpty ? null : _selectedSpecializations.first;
+    _specializationController.text = _selectedSpecializations.join(', ');
+  }
+
+  void _toggleSpecialization(String option) {
+    final selecting = !_selectedSpecializations.contains(option);
+    final error = specializationToggleError(
+      current: _selectedSpecializations,
+      option: option,
+      selecting: selecting,
+    );
+    if (error != null) {
+      _showError(error);
+      return;
+    }
+    setState(() {
+      if (selecting) {
+        if (option == 'General Fitness') {
+          _selectedSpecializations
+            ..clear()
+            ..add('General Fitness');
+        } else {
+          _selectedSpecializations.add(option);
+        }
+      } else {
+        _selectedSpecializations.remove(option);
+      }
+      _selectedSpecialization =
+          _selectedSpecializations.isEmpty ? null : _selectedSpecializations.first;
+      _specializationController.text = _selectedSpecializations.join(', ');
+    });
+  }
+
   @override
   void dispose() {
     _pageController.dispose();
@@ -328,24 +424,26 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
 
   bool _validateCurrentStep() {
     if (_currentStep == _accountStepIndex) {
-      if (_nameController.text.trim().isEmpty) return _showError('Please enter your full name');
-      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(_emailController.text.trim())) {
-        return _showError('Please enter a valid email');
-      }
+      final nameError = validateFullName(_nameController.text);
+      if (nameError != null) return _showError(nameError);
+      final emailError = validateEmail(_emailController.text);
+      if (emailError != null) return _showError(emailError);
       final passwordError = PasswordUtils.validatePassword(_passwordController.text);
       if (passwordError != null) return _showError(passwordError);
       return true;
     }
     if (_currentStep == _personalStepIndex) {
       if (_phoneController.text.trim().isEmpty) return _showError('Phone number is required');
+      final digits = _phoneController.text.replaceAll(RegExp(r'\D'), '');
+      if (digits.length < 7 || digits.length > 15) {
+        return _showError('Please enter a valid phone number');
+      }
       final age = int.tryParse(_ageController.text.trim());
-      if (age == null || age < 18) return _showError('You must be at least 18 years old');
-      if (_locationController.text.trim().isEmpty) {
-        return _showError('Select your city / location');
+      if (age == null || age < 18 || age > 120) {
+        return _showError('Age must be between 18 and 120 years.');
       }
-      if (!SomaliaCities.contains(_locationController.text)) {
-        return _showError('Select a city from the Somalia cities list');
-      }
+      final locationError = SomaliaRegions.validate(_locationController.text);
+      if (locationError != null) return _showError(locationError);
       return true;
     }
     if (_currentStep == _professionalStepIndex) {
@@ -359,9 +457,12 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
           'Upload at least one certificate photo (JPG or PNG) that clearly shows your first and last name',
         );
       }
-      if (_specializationController.text.trim().isEmpty) {
-        return _showError('Enter at least one specialization');
+      if (_selectedSpecializations.isEmpty) {
+        return _showError('Please select at least one specialization.');
       }
+      final specializationError =
+          validateSpecializationSelection(_selectedSpecializations.toList());
+      if (specializationError != null) return _showError(specializationError);
       if (_selectedWorkingDays.isEmpty) {
         return _showError('Select at least one working day');
       }
@@ -796,10 +897,11 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
       final payload = {
         'phone': _phoneController.text.trim(),
         'age': int.parse(_ageController.text.trim()),
-        'location': _locationController.text.trim(),
+        'location': SomaliaRegions.match(_locationController.text) ??
+            _locationController.text.trim(),
         'yearsExperience': int.parse(_yearsExperienceController.text.trim()),
         'certifications': _certificationsController.text.trim(),
-        'specialization': _specializationController.text.trim(),
+        'specialization': _selectedSpecializations.toList(),
         'bio': _bioController.text.trim(),
         'experience': _experienceController.text.trim(),
         'message': _messageController.text.trim(),
@@ -827,7 +929,7 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
           location: payload['location'] as String,
           yearsExperience: payload['yearsExperience'] as int,
           certifications: payload['certifications'] as String,
-          specialization: payload['specialization'] as String,
+          specialization: payload['specialization'],
           bio: payload['bio'] as String,
           experience: payload['experience'] as String,
           message: payload['message'] as String,
@@ -847,6 +949,34 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
               coachApplicationStatus: 'pending',
               coachApplicationReviewedAt: null,
             );
+      } else if (widget.adminCreating) {
+        final created = await _apiService.createAdminUser(
+          name: _nameController.text.trim(),
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+          role: 'coach',
+          phone: payload['phone'] as String,
+          age: payload['age'] as int,
+          location: payload['location'] as String,
+          yearsExperience: payload['yearsExperience'] as int,
+          certifications: payload['certifications'] as String,
+          specialization: payload['specialization'],
+          bio: payload['bio'] as String,
+          experience: payload['experience'] as String,
+          message: payload['message'] as String,
+          workingDays: payload['workingDays'] as List<String>,
+          appointmentDays: payload['appointmentDays'] as List<String>,
+          dayAvailability: (payload['dayAvailability'] as List)
+              .map((e) => Map<String, String>.from(e as Map))
+              .toList(),
+          appointmentDurationMinutes: payload['appointmentDurationMinutes'] as int,
+          certificateFiles: (payload['certificateFiles'] as List)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList(),
+        );
+        if (!mounted) return;
+        Navigator.of(context).pop(created);
+        return;
       } else {
         user = await _apiService.registerCoach(
           name: _nameController.text.trim(),
@@ -857,7 +987,7 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
           location: payload['location'] as String,
           yearsExperience: payload['yearsExperience'] as int,
           certifications: payload['certifications'] as String,
-          specialization: payload['specialization'] as String,
+          specialization: payload['specialization'],
           bio: payload['bio'] as String,
           experience: payload['experience'] as String,
           message: payload['message'] as String,
@@ -1094,18 +1224,37 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
           TextField(
             controller: _nameController,
             textCapitalization: TextCapitalization.words,
-            decoration: _fieldDecoration('Full Name *', icon: Icons.person_outline),
+            onChanged: (_) => setState(() {}),
+            decoration: _fieldDecoration('Full Name *', icon: Icons.person_outline).copyWith(
+              errorText: _nameController.text.trim().isEmpty
+                  ? null
+                  : validateFullName(_nameController.text),
+            ),
           ),
           const SizedBox(height: 16),
           TextField(
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
-            decoration: _fieldDecoration('Email Address *', icon: Icons.email_outlined),
+            autocorrect: false,
+            enableSuggestions: !widget.adminCreating,
+            autofillHints: widget.adminCreating
+                ? const []
+                : const [AutofillHints.email],
+            onChanged: (_) => setState(() {}),
+            decoration: _fieldDecoration('Email Address *', icon: Icons.email_outlined).copyWith(
+              errorText: _emailController.text.trim().isEmpty
+                  ? null
+                  : validateEmail(_emailController.text),
+            ),
           ),
           const SizedBox(height: 16),
           TextField(
             controller: _passwordController,
             obscureText: _obscurePassword,
+            enableSuggestions: false,
+            autofillHints: widget.adminCreating
+                ? const []
+                : const [AutofillHints.newPassword],
             decoration: _fieldDecoration('Password *', icon: Icons.lock_outline).copyWith(
               suffixIcon: IconButton(
                 icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
@@ -1144,19 +1293,19 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
             decoration: _fieldDecoration('Age *', hint: 'Must be 18+', icon: Icons.cake_outlined),
           ),
           const SizedBox(height: 16),
-          _buildSomaliaCityDropdown(isDark),
+          _buildSomaliaRegionDropdown(isDark),
         ],
       ),
     );
   }
 
-  Widget _buildSomaliaCityDropdown(bool isDark) {
-    final selected = SomaliaCities.match(_locationController.text);
+  Widget _buildSomaliaRegionDropdown(bool isDark) {
+    final selected = SomaliaRegions.match(_locationController.text);
     final displayRaw = _locationController.text.trim();
 
     if (!_canEdit) {
       return InputDecorator(
-        decoration: _fieldDecoration('City / Location *', icon: Icons.location_on_outlined),
+        decoration: _fieldDecoration('Region / Gobol *', icon: Icons.location_on_outlined),
         child: Text(
           (selected ?? displayRaw).isNotEmpty ? (selected ?? displayRaw) : '—',
           style: TextStyle(
@@ -1172,21 +1321,21 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
       isExpanded: true,
       menuMaxHeight: 360,
       decoration: _fieldDecoration(
-        'City / Location *',
-        hint: 'Select a city in Somalia',
+        'Region / Gobol *',
+        hint: 'Select Somali region',
         icon: Icons.location_on_outlined,
       ),
-      items: SomaliaCities.all
+      items: SomaliaRegions.all
           .map(
-            (city) => DropdownMenuItem<String>(
-              value: city,
-              child: Text(city, overflow: TextOverflow.ellipsis),
+            (region) => DropdownMenuItem<String>(
+              value: region,
+              child: Text(region, overflow: TextOverflow.ellipsis),
             ),
           )
           .toList(),
-      onChanged: (city) {
-        if (city == null) return;
-        setState(() => _locationController.text = city);
+      onChanged: (region) {
+        if (region == null) return;
+        setState(() => _locationController.text = region);
       },
     );
   }
@@ -1485,15 +1634,85 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
           const SizedBox(height: 20),
           _buildCertificateUploadSection(isDark),
           const SizedBox(height: 16),
-          TextField(
-            controller: _specializationController,
-            readOnly: !_canEdit,
-            decoration: _fieldDecoration(
-              'Specializations *',
-              hint: 'Strength, Yoga, Nutrition (comma-separated)',
-              icon: Icons.fitness_center,
+          Text(
+            'Specializations *',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: isDark ? Colors.white : CoachDashboardTheme.textPrimary,
             ),
           ),
+          const SizedBox(height: 6),
+          Text(
+            'Select one or more specialized options, or General Fitness alone (it cannot be combined).',
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.white70 : Colors.black54,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            constraints: const BoxConstraints(maxHeight: 280),
+            decoration: BoxDecoration(
+              border: Border.all(color: isDark ? Colors.white24 : Colors.black12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: ListView(
+              shrinkWrap: true,
+              children: _specializationOptions.map((option) {
+                final selected = _selectedSpecializations.contains(option);
+                final generalSelected = _selectedSpecializations.contains('General Fitness');
+                final othersSelected =
+                    _selectedSpecializations.any((item) => item != 'General Fitness');
+                final disabled = !selected &&
+                    ((generalSelected && option != 'General Fitness') ||
+                        (option == 'General Fitness' && othersSelected));
+                return CheckboxListTile(
+                  dense: true,
+                  value: selected,
+                  title: Text(
+                    option,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: disabled
+                          ? (isDark ? Colors.white38 : Colors.black38)
+                          : null,
+                    ),
+                  ),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  onChanged: (!_canEdit || disabled)
+                      ? null
+                      : (_) => _toggleSpecialization(option),
+                );
+              }).toList(),
+            ),
+          ),
+          if (_selectedSpecializations.contains('General Fitness')) ...[
+            const SizedBox(height: 8),
+            Text(
+              'General Fitness is exclusive. Remove it before selecting other specializations.',
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? Colors.white70 : Colors.black54,
+              ),
+            ),
+          ],
+          if (_selectedSpecializations.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Selected Specializations:',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.white : CoachDashboardTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            ..._selectedSpecializations.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(left: 8, top: 2),
+                child: Text('• $item'),
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           _buildWorkingDaysSection(isDark),
         ],
@@ -1933,7 +2152,7 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
           _reviewCard(isDark, 'Personal', [
             _reviewRow('Phone', _phoneController.text),
             _reviewRow('Age', _ageController.text),
-            _reviewRow('Location', _locationController.text),
+            _reviewRow('Region / Gobol', _locationController.text),
           ]),
           _reviewCard(isDark, 'Professional', [
             _reviewRow('Experience', '${_yearsExperienceController.text} years'),
@@ -1942,7 +2161,12 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
               'Certificate files',
               '${_certificates.length + _existingCertificateFiles.length} uploaded',
             ),
-            _reviewRow('Specializations', _specializationController.text),
+            _reviewRow(
+              'Specializations',
+              _selectedSpecializations.isEmpty
+                  ? _specializationController.text
+                  : _selectedSpecializations.join(', '),
+            ),
             _reviewRow('Working Days', _orderedWorkingDays.join(', ')),
           ]),
           _reviewCard(isDark, 'Appointment Days', [

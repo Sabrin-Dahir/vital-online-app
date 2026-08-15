@@ -10,6 +10,7 @@ import '../../../widgets/tab_refresh.dart';
 import '../chat_screen.dart';
 import '../../../utils/async_load.dart';
 import '../../../utils/coach_thread_utils.dart';
+import '../../../utils/coach_specialization.dart';
 import '../coach_public_profile_screen.dart';
 import '../user_class_detail_screen.dart';
 import '../../../widgets/coach_working_days_display.dart';
@@ -134,9 +135,19 @@ class _UserCoachesTabState extends State<UserCoachesTab> with TabRefreshMixin {
     }
   }
 
+  String? get _memberFitnessGoal =>
+      normalizeFitnessGoal(widget.user.profile?.fitnessGoal);
+
+  List<dynamic> _filterMatchingCoaches(Iterable<dynamic> coaches) {
+    final goal = _memberFitnessGoal;
+    final approved = coaches.where(_isApprovedCoach);
+    if (goal == null) return approved.toList();
+    return approved.where((c) => coachMatchesFitnessGoal(c, goal)).toList();
+  }
+
   Future<void> _loadDiscoverCoaches() async {
     try {
-      final coaches = (await _apiService.getCoaches()).where(_isApprovedCoach).toList();
+      final coaches = _filterMatchingCoaches(await _apiService.getCoaches());
       if (mounted && _canRequestCoach) {
         setState(() => _allCoaches = coaches);
       }
@@ -178,9 +189,9 @@ class _UserCoachesTabState extends State<UserCoachesTab> with TabRefreshMixin {
       var coaches = <dynamic>[];
       if (!hasSelectedCoach) {
         try {
-          coaches = (await _apiService.getCoaches().timeout(const Duration(seconds: 15)))
-              .where(_isApprovedCoach)
-              .toList();
+          coaches = _filterMatchingCoaches(
+            await _apiService.getCoaches().timeout(const Duration(seconds: 15)),
+          );
         } catch (_) {
           coaches = <dynamic>[];
         }
@@ -856,13 +867,14 @@ class _UserCoachesTabState extends State<UserCoachesTab> with TabRefreshMixin {
 
   Future<void> _requestCoach(String coachId, String coachName) async {
     if (_mutatingRequest || !_canRequestCoach || coachId.isEmpty) return;
-    final message = await showDialog<String>(
-      context: context,
-      builder: (ctx) => _CoachRequestDialog(coachName: coachName),
-    );
-    if (message == null || !mounted) return;
-    if (_mutatingRequest || _hasPendingRequest || _hasActiveCoach) return;
-
+    final goal = _memberFitnessGoal;
+    if (goal == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Set your fitness goal before requesting a coach.')),
+      );
+      return;
+    }
     Map<String, dynamic>? coachPayload;
     for (final raw in _allCoaches) {
       if (raw is Map && raw['_id']?.toString() == coachId) {
@@ -870,6 +882,24 @@ class _UserCoachesTabState extends State<UserCoachesTab> with TabRefreshMixin {
         break;
       }
     }
+    if (coachPayload != null && !coachMatchesFitnessGoal(coachPayload, goal)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Request rejected: Coach specialization does not match the client's fitness goal.",
+          ),
+        ),
+      );
+      return;
+    }
+    final message = await showDialog<String>(
+      context: context,
+      builder: (ctx) => _CoachRequestDialog(coachName: coachName),
+    );
+    if (message == null || !mounted) return;
+    if (_mutatingRequest || _hasPendingRequest || _hasActiveCoach) return;
+
     coachPayload ??= {'_id': coachId, 'name': coachName};
 
     final previousRequest = _coachRequest;

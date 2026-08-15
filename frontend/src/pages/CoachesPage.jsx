@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { UserRound } from "lucide-react";
 import {
   approveCoachApplication,
@@ -40,6 +40,10 @@ function isApprovedCoach(coach) {
 }
 
 function specializationLabel(coach) {
+  const fromSpecialties = coach.coachData?.specialties || coach.profile?.specializations;
+  if (Array.isArray(fromSpecialties) && fromSpecialties.length) {
+    return formatList(fromSpecialties);
+  }
   const fromRow = coach.specialization;
   if (Array.isArray(fromRow) && fromRow.length) return formatList(fromRow);
   if (typeof fromRow === "string" && fromRow.trim()) return fromRow;
@@ -58,6 +62,7 @@ function photoUrl(coach) {
 
 export default function CoachesPage() {
   const toast = useToast();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = ["all", "applications", "coaches"].includes(searchParams.get("tab"))
     ? searchParams.get("tab")
@@ -231,6 +236,10 @@ export default function CoachesPage() {
         render: (row) =>
           row.specialization || formatList(applicationProfile(row).specialization) || "—" },
       {
+        key: "location",
+        header: "Region / Gobol",
+        render: (row) => row.location || applicationProfile(row).location || "—" },
+      {
         key: "status",
         header: "Status",
         sortable: true,
@@ -343,6 +352,14 @@ export default function CoachesPage() {
         header: "Specialization",
         render: (row) => specializationLabel(row) },
       {
+        key: "location",
+        header: "Region / Gobol",
+        render: (row) =>
+          row.profile?.location
+          || row.coachData?.location
+          || coachProfileFromUser(row).location
+          || "—" },
+      {
         key: "activeClients",
         header: "Linked clients",
         sortable: true,
@@ -432,7 +449,7 @@ export default function CoachesPage() {
     <div>
       <PageHeader
         title="Coaches"
-        subtitle="View all coaches, approve or reject registration requests, and permanently delete coach accounts when needed."
+        subtitle="Register coaches, approve or reject applications, and permanently delete coach accounts when needed."
         breadcrumbs={
           <Breadcrumbs
             items={[{ label: "Home", to: "/" }, { label: "Coaches" }]}
@@ -440,6 +457,7 @@ export default function CoachesPage() {
         }
         action={
           <div className="flex flex-wrap gap-2">
+            <Button onClick={() => navigate("/coaches/register")}>Register coach</Button>
             <Button
               variant={tab === "all" ? "primary" : "secondary"}
               onClick={() => setTab("all")}

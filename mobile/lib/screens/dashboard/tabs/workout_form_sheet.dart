@@ -154,6 +154,36 @@ class _WorkoutFormSheetState extends State<WorkoutFormSheet> {
       );
       return;
     }
+    for (var i = 0; i < _exercises.length; i++) {
+      final exercise = _exercises[i];
+      if (exercise.name.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exercise ${i + 1}: name is required'),
+            backgroundColor: CoachDashboardTheme.danger,
+          ),
+        );
+        return;
+      }
+      if (exercise.sets < 1 || exercise.sets > 100) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exercise ${i + 1}: sets must be between 1 and 100'),
+            backgroundColor: CoachDashboardTheme.danger,
+          ),
+        );
+        return;
+      }
+      if (exercise.reps < 1 || exercise.reps > 500) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Exercise ${i + 1}: repetitions must be between 1 and 500'),
+            backgroundColor: CoachDashboardTheme.danger,
+          ),
+        );
+        return;
+      }
+    }
 
     setState(() => _isSubmitting = true);
     final isTemplate = widget.clientId == null && widget.fitnessClassId == null;

@@ -1,13 +1,16 @@
+import { fitnessGoalLabel as specializationGoalLabel } from "./coachSpecialization";
+
 /** Labels for fitness goals collected at member registration. */
 export function fitnessGoalLabel(goal) {
   if (!goal) return "";
   const labels = {
-    lose_weight: "Lose weight",
-    gain_muscle: "Gain muscle",
-    maintain: "Maintain",
-    other: "General",
+    lose_weight: "Weight Loss",
+    gain_muscle: "Muscle Building",
+    maintain: "General Fitness",
+    other: "General Fitness",
   };
-  return labels[goal] || String(goal);
+  if (labels[goal]) return labels[goal];
+  return specializationGoalLabel(goal) || String(goal);
 }
 
 /** Registration fields stored on User.clientData (and top-level account fields). */

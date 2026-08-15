@@ -86,6 +86,11 @@ async function hasSessionOverlap(coachId, date, durationMinutes, excludeId = nul
 /** POST /api/session — coach creates 1-on-1; user may request (legacy). */
 exports.bookSession = async (req, res) => {
   try {
+    if (req.user.role === 'coach') {
+      const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+      if (!enforceCoachSpecialization(req, res, { resourceType: 'session' })) return;
+    }
+
     const {
       coachId,
       clientId,
@@ -150,6 +155,19 @@ exports.bookSession = async (req, res) => {
       meetingLink: mode === 'online' ? linkCheck.value : '',
       status,
     });
+
+    try {
+      const { ensureSessionAttendance } = require('../utils/attendanceService');
+      await ensureSessionAttendance({
+        coachId: coach,
+        userId: client,
+        sessionId: session._id,
+        scheduledStart: parsedDate,
+        durationMinutes: duration,
+      });
+    } catch (attErr) {
+      console.warn('session attendance:', attErr.message);
+    }
 
     if (req.user.role === 'coach') {
       await notify(
@@ -258,6 +276,19 @@ exports.updateSessionStatus = async (req, res) => {
     if (status === 'in_progress' && !session.startedAt) session.startedAt = new Date();
     if (status === 'completed') session.completedAt = new Date();
     await session.save();
+
+    if (['completed', 'cancelled', 'no_show'].includes(status)) {
+      try {
+        const { syncLinkedSessionAttendance } = require('../utils/attendanceService');
+        await syncLinkedSessionAttendance({
+          sessionId: session._id,
+          status,
+          markedBy: req.user._id,
+        });
+      } catch (attErr) {
+        console.warn('session status attendance sync:', attErr.message);
+      }
+    }
 
     const other = String(session.coach) === me ? session.client : session.coach;
     await notify(other, `1-on-1 session on ${formatWhen(session.date)} is now ${status.replace('_', ' ')}.`, 'update');
@@ -445,6 +476,16 @@ exports.completeSession = async (req, res) => {
     session.completedAt = new Date();
     if (coachNotes !== undefined) session.coachNotes = String(coachNotes).trim();
     await session.save();
+    try {
+      const { syncLinkedSessionAttendance } = require('../utils/attendanceService');
+      await syncLinkedSessionAttendance({
+        sessionId: session._id,
+        status: 'completed',
+        markedBy: req.user._id,
+      });
+    } catch (attErr) {
+      console.warn('complete session attendance:', attErr.message);
+    }
     await notify(session.client, `Your 1-on-1 session on ${formatWhen(session.date)} was marked completed.`, 'update');
     return res.json(await loadSession(session._id));
   } catch (error) {
@@ -474,6 +515,18 @@ exports.cancelSession = async (req, res) => {
     session.status = 'cancelled';
     if (coachOwned && coachNotes !== undefined) session.coachNotes = String(coachNotes).trim();
     await session.save();
+
+    try {
+      const { syncLinkedSessionAttendance } = require('../utils/attendanceService');
+      await syncLinkedSessionAttendance({
+        sessionId: session._id,
+        status: 'cancelled',
+        markedBy: req.user._id,
+        force: true,
+      });
+    } catch (attErr) {
+      console.warn('cancel session attendance:', attErr.message);
+    }
 
     const other = coachOwned ? session.client : session.coach;
     await notify(

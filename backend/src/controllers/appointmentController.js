@@ -16,8 +16,12 @@ const {
   parseTimezoneOffsetMinutes,
   isValidSlotTime,
   getHoursForDay,
+  hhmmToMinutes,
+  wallClockHHMM,
 } = require('../utils/appointmentSlots');
 const { isApprovedPublicCoach } = require('../utils/coachProfile');
+const { respondWithCaughtError } = require('../utils/httpErrors');
+const { validateDurationMinutes, validateObjectId } = require('../utils/fieldValidation');
 
 function formatDateTime(date) {
   return new Date(date).toLocaleString('en-US', {
@@ -160,7 +164,20 @@ async function requestAppointment(req, res) {
       return res.status(400).json({ message: 'Appointment must be scheduled in the future' });
     }
 
-    const duration = durationMinutes || 60;
+    const durationError = validateDurationMinutes(durationMinutes ?? 60);
+    if (durationError) return res.status(400).json({ message: durationError });
+    const duration = Number(durationMinutes) || 60;
+
+    const availabilityError = await assertWithinCoachAvailability(
+      coachId,
+      parsedDate,
+      duration,
+      req.body.timezoneOffsetMinutes,
+    );
+    if (availabilityError) {
+      return res.status(400).json({ message: availabilityError });
+    }
+
     const overlap = await hasOverlap(coachId, parsedDate, duration);
     if (overlap) {
       return res.status(409).json({ message: 'That time slot is already booked. Please choose another time.' });
@@ -191,12 +208,15 @@ async function requestAppointment(req, res) {
       .populate('coach', 'username full_name phone');
     return res.status(201).json(populated);
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 
 async function createCoachAppointment(req, res) {
   try {
+    const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+    if (!enforceCoachSpecialization(req, res, { resourceType: 'appointment' })) return;
+
     const {
       clientId,
       fitnessClassId,
@@ -222,7 +242,29 @@ async function createCoachAppointment(req, res) {
       return res.status(400).json({ message: 'Appointment must be scheduled in the future' });
     }
 
-    const duration = durationMinutes || 60;
+    const durationError = validateDurationMinutes(durationMinutes ?? 60);
+    if (durationError) return res.status(400).json({ message: durationError });
+    const duration = Number(durationMinutes) || 60;
+
+    if (clientId) {
+      const idError = validateObjectId(clientId, 'Client');
+      if (idError) return res.status(400).json({ message: idError });
+    }
+    if (fitnessClassId) {
+      const idError = validateObjectId(fitnessClassId, 'Group');
+      if (idError) return res.status(400).json({ message: idError });
+    }
+
+    const availabilityError = await assertWithinCoachAvailability(
+      req.user._id,
+      parsedDate,
+      duration,
+      req.body.timezoneOffsetMinutes,
+    );
+    if (availabilityError) {
+      return res.status(400).json({ message: availabilityError });
+    }
+
     const overlap = await hasOverlap(req.user._id, parsedDate, duration);
     if (overlap) {
       return res.status(409).json({ message: 'That time slot overlaps with another appointment.' });
@@ -275,6 +317,33 @@ async function createCoachAppointment(req, res) {
         })),
       );
 
+      try {
+        const {
+          ensureSessionAttendance,
+          ensureGroupAttendance,
+        } = require('../utils/attendanceService');
+        await Promise.all(
+          created.map(async (appt) => {
+            await ensureSessionAttendance({
+              coachId: req.user._id,
+              userId: appt.client,
+              appointmentId: appt._id,
+              scheduledStart: parsedDate,
+              durationMinutes: duration,
+            });
+            await ensureGroupAttendance({
+              coachId: req.user._id,
+              userId: appt.client,
+              fitnessClassId,
+              scheduledStart: parsedDate,
+              durationMinutes: duration,
+            });
+          }),
+        );
+      } catch (attErr) {
+        console.warn('group appointment attendance:', attErr.message);
+      }
+
       await Promise.all(
         studentIds.map((studentId) =>
           notifyUser(
@@ -308,6 +377,19 @@ async function createCoachAppointment(req, res) {
       user_id: clientId,
     });
 
+    try {
+      const { ensureSessionAttendance } = require('../utils/attendanceService');
+      await ensureSessionAttendance({
+        coachId: req.user._id,
+        userId: clientId,
+        appointmentId: appointment._id,
+        scheduledStart: appointment.dateTime || appointment.datetime || parsedDate,
+        durationMinutes: appointment.durationMinutes,
+      });
+    } catch (attErr) {
+      console.warn('appointment attendance:', attErr.message);
+    }
+
     await notifyUser(
       clientId,
       `Your coach scheduled an appointment for ${formatDateTime(parsedDate)}.`,
@@ -316,7 +398,7 @@ async function createCoachAppointment(req, res) {
 
     return res.status(201).json(await loadAppointment(appointment._id));
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 
@@ -327,7 +409,7 @@ async function getCoachAppointments(req, res) {
     ).sort({ dateTime: -1 });
     return res.json(appointments);
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 
@@ -338,7 +420,7 @@ async function getUserAppointments(req, res) {
     ).sort({ dateTime: -1 });
     return res.json(appointments);
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 
@@ -382,7 +464,7 @@ async function approveAppointment(req, res) {
 
     return res.json(await loadAppointment(appointment._id));
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 
@@ -413,7 +495,7 @@ async function rejectAppointment(req, res) {
 
     return res.json(await loadAppointment(appointment._id));
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 
@@ -466,7 +548,7 @@ async function rescheduleAppointment(req, res) {
 
     return res.json(await loadAppointment(appointment._id));
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 
@@ -501,6 +583,17 @@ async function completeAppointment(req, res) {
     if (coachNotes !== undefined) appointment.coachNotes = String(coachNotes).trim();
     await appointment.save();
 
+    try {
+      const { syncLinkedSessionAttendance } = require('../utils/attendanceService');
+      await syncLinkedSessionAttendance({
+        appointmentId: appointment._id,
+        status: 'completed',
+        markedBy: req.user._id,
+      });
+    } catch (attErr) {
+      console.warn('complete appointment attendance:', attErr.message);
+    }
+
     await notifyUser(
       appointment.client,
       `Your appointment on ${formatDateTime(appointment.dateTime)} has been marked completed.`,
@@ -509,7 +602,7 @@ async function completeAppointment(req, res) {
 
     return res.json(await loadAppointment(appointment._id));
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 
@@ -527,7 +620,7 @@ async function updateAppointmentNotes(req, res) {
 
     return res.json(await loadAppointment(appointment._id));
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 
@@ -582,7 +675,7 @@ async function startAppointment(req, res) {
 
     return res.json(await loadAppointment(appointment._id));
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 
@@ -623,7 +716,7 @@ async function updateMeetingLink(req, res) {
 
     return res.json(await loadAppointment(appointment._id));
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 
@@ -730,7 +823,7 @@ async function createFollowUpAppointment(req, res) {
 
     return res.status(201).json(await loadAppointment(followUp._id));
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 
@@ -772,6 +865,38 @@ async function getCoachSettings(coachId) {
 
 function hoursForDayName(settings, dayName) {
   return getHoursForDay(settings.dayAvailability, dayName, settings.start, settings.end);
+}
+
+function dateStrInOffset(dateTime, timezoneOffsetMinutes = 0) {
+  const offset = parseTimezoneOffsetMinutes(timezoneOffsetMinutes) ?? 0;
+  const shifted = new Date(new Date(dateTime).getTime() + offset * 60 * 1000);
+  return shifted.toISOString().slice(0, 10);
+}
+
+async function assertWithinCoachAvailability(coachId, dateTime, durationMinutes, timezoneOffsetMinutes = 0) {
+  const settings = await getCoachSettings(coachId);
+  if (!Array.isArray(settings.appointmentDays) || !settings.appointmentDays.length) {
+    // Legacy coaches without configured appointment days — skip hours gate.
+    return null;
+  }
+  const dateStr = dateStrInOffset(dateTime, timezoneOffsetMinutes);
+  const dayName = getDayNameFromDateStr(dateStr) || getDayName(dateTime);
+  if (!settings.appointmentDays.includes(dayName)) {
+    return `The coach does not accept appointments on ${dayName}.`;
+  }
+  const { start, end } = hoursForDayName(settings, dayName);
+  const time = wallClockHHMM(dateTime, timezoneOffsetMinutes);
+  const startM = hhmmToMinutes(start);
+  const endM = hhmmToMinutes(end);
+  const slotM = hhmmToMinutes(time);
+  const duration = Number(durationMinutes) || settings.duration || DEFAULT_DURATION;
+  if (startM == null || endM == null || slotM == null) {
+    return 'Appointment time is invalid';
+  }
+  if (slotM < startM || slotM + duration > endM) {
+    return "That time is outside the coach's working hours.";
+  }
+  return null;
 }
 
 // GET available slots for a coach on a specific date (member only).
@@ -860,7 +985,7 @@ async function getCoachAvailability(req, res) {
       availableCount: availableSlots.length,
     });
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 
@@ -958,7 +1083,7 @@ async function bookAppointment(req, res) {
       .populate('coach', 'username full_name phone');
     return res.status(201).json(populated);
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 
@@ -980,6 +1105,18 @@ async function cancelAppointmentByUser(req, res) {
     appointment.status = 'cancelled';
     await appointment.save();
 
+    try {
+      const { syncLinkedSessionAttendance } = require('../utils/attendanceService');
+      await syncLinkedSessionAttendance({
+        appointmentId: appointment._id,
+        status: 'cancelled',
+        markedBy: req.user._id,
+        force: true,
+      });
+    } catch (attErr) {
+      console.warn('user cancel appointment attendance:', attErr.message);
+    }
+
     await notifyUser(
       appointment.coach || appointment.coach_id,
       `${req.user.full_name || req.user.username || 'A client'} cancelled their appointment on ${formatDateTime(appointment.dateTime)}.`,
@@ -988,7 +1125,7 @@ async function cancelAppointmentByUser(req, res) {
 
     return res.json(await loadAppointment(appointment._id));
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 
@@ -1009,6 +1146,18 @@ async function cancelAppointmentByCoach(req, res) {
     if (coachNotes !== undefined) appointment.coachNotes = String(coachNotes).trim();
     await appointment.save();
 
+    try {
+      const { syncLinkedSessionAttendance } = require('../utils/attendanceService');
+      await syncLinkedSessionAttendance({
+        appointmentId: appointment._id,
+        status: 'cancelled',
+        markedBy: req.user._id,
+        force: true,
+      });
+    } catch (attErr) {
+      console.warn('coach cancel appointment attendance:', attErr.message);
+    }
+
     await notifyUser(
       appointment.client,
       `Your appointment on ${formatDateTime(appointment.dateTime)} was cancelled by your coach.`,
@@ -1017,7 +1166,7 @@ async function cancelAppointmentByCoach(req, res) {
 
     return res.json(await loadAppointment(appointment._id));
   } catch (error) {
-    return res.status(500).json({ message: error.message });
+    return respondWithCaughtError(res, error);
   }
 }
 

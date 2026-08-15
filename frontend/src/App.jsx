@@ -6,6 +6,8 @@ import AppointmentsPage from "./pages/AppointmentsPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import CoachesPage from "./pages/CoachesPage";
 import CoachApplicationDetailPage from "./pages/CoachApplicationDetailPage";
+import AdminCoachRegisterPage from "./pages/AdminCoachRegisterPage";
+import AdminUserRegisterPage from "./pages/AdminUserRegisterPage";
 import CoachDetailPage from "./pages/CoachDetailPage";
 import DashboardPage from "./pages/DashboardPage";
 import InsightsPage from "./pages/InsightsPage";
@@ -27,6 +29,8 @@ import CoachDashboardPage from "./pages/role/CoachDashboardPage";
 import CoachClientsPage from "./pages/role/CoachClientsPage";
 import CoachAppointmentsPage from "./pages/role/CoachAppointmentsPage";
 import CoachSessionsPage from "./pages/role/CoachSessionsPage";
+import CoachAttendancePage from "./pages/role/CoachAttendancePage";
+import MemberAttendancePage from "./pages/role/MemberAttendancePage";
 
 export function dashboardPath(role) {
   if (role === "admin") return "/";
@@ -103,8 +107,10 @@ export default function App() {
       >
         <Route index element={<DashboardPage />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="users/register" element={<AdminUserRegisterPage />} />
         <Route path="users/:id" element={<UserDetailPage />} />
         <Route path="coaches" element={<CoachesPage />} />
+        <Route path="coaches/register" element={<AdminCoachRegisterPage />} />
         <Route path="coaches/applications/:id" element={<CoachApplicationDetailPage />} />
         <Route path="coaches/:id" element={<CoachDetailPage />} />
         <Route path="appointments" element={<AppointmentsPage />} />
@@ -137,6 +143,7 @@ export default function App() {
         <Route path="coaches" element={<MemberCoachesPage />} />
         <Route path="appointments" element={<MemberAppointmentsPage />} />
         <Route path="sessions" element={<MemberSessionsPage />} />
+        <Route path="attendance" element={<MemberAttendancePage />} />
         <Route path="account" element={<RoleAccountPage role="user" />} />
         <Route path="progress" element={<MemberProgressPage />} />
         <Route path="share" element={<MemberSharePage />} />
@@ -157,6 +164,7 @@ export default function App() {
         <Route path="clients" element={<CoachClientsPage />} />
         <Route path="appointments" element={<CoachAppointmentsPage />} />
         <Route path="sessions" element={<CoachSessionsPage />} />
+        <Route path="attendance" element={<CoachAttendancePage />} />
         <Route path="account" element={<RoleAccountPage role="coach" />} />
         <Route path="notifications" element={<RoleNotificationsPage />} />
         <Route path="password" element={<RolePasswordPage role="coach" />} />

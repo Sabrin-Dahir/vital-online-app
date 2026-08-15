@@ -1,11 +1,11 @@
 const mongoose = require('mongoose');
 
 const exerciseItemSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  sets: { type: Number, required: true },
-  reps: { type: Number, required: true },
-  durationMinutes: { type: Number },
-  restSeconds: { type: Number },
+  name: { type: String, required: true, trim: true },
+  sets: { type: Number, required: true, min: 1, max: 100 },
+  reps: { type: Number, required: true, min: 1, max: 500 },
+  durationMinutes: { type: Number, min: 0, max: 240 },
+  restSeconds: { type: Number, min: 0, max: 600 },
   equipment: { type: String, default: '' },
   instructions: { type: String, default: '' },
   demoImageUrl: { type: String, default: '' },
@@ -17,12 +17,20 @@ const exercisePlanSchema = new mongoose.Schema({
   coach: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   client: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   fitnessClass: { type: mongoose.Schema.Types.ObjectId, ref: 'FitnessClass' },
-  title: { type: String, default: 'Workout Plan' },
-  description: { type: String, default: '' },
-  instructions: { type: String, default: '' },
+  title: { type: String, default: 'Workout Plan', trim: true, maxlength: 120 },
+  description: { type: String, default: '', maxlength: 5000 },
+  instructions: { type: String, default: '', maxlength: 5000 },
   level: { type: String, enum: ['Beginner', 'Intermediate', 'Advanced'], default: 'Beginner' },
   dueDate: { type: Date },
-  exercises: [exerciseItemSchema],
+  exercises: {
+    type: [exerciseItemSchema],
+    validate: {
+      validator(value) {
+        return Array.isArray(value) && value.length > 0;
+      },
+      message: 'At least one exercise is required',
+    },
+  },
   status: {
     type: String,
     enum: ['active', 'archived'],

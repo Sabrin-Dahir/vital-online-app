@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../utils/field_validation.dart';
 import '../../utils/password_utils.dart';
 import '../../services/api_service.dart';
 import '../../widgets/scrollable_body.dart';
@@ -209,16 +210,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                       label: 'Email',
                                       prefixIcon: Icons.email_outlined,
                                     ),
-                                    validator: (value) {
-                                      if (value == null || value.trim().isEmpty) {
-                                        return 'Please enter your email';
-                                      }
-                                      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$')
-                                          .hasMatch(value)) {
-                                        return 'Please enter a valid email address';
-                                      }
-                                      return null;
-                                    },
+                                    validator: validateEmail,
+                                    autovalidateMode: AutovalidateMode.onUserInteraction,
                                   ),
                                   const SizedBox(height: 12),
 

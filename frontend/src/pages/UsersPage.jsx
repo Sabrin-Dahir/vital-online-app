@@ -139,16 +139,19 @@ export default function UsersPage() {
     <div>
       <PageHeader
         title="Users"
-        subtitle="View registration details from the app. You can permanently delete a member account; editing member profiles is not allowed."
+        subtitle="Register clients, view their details, and permanently delete a member account when needed. Clients cannot change their own role."
         breadcrumbs={
           <Breadcrumbs
             items={[{ label: "Home", to: "/" }, { label: "Users" }]}
           />
         }
         action={
-          <Button variant="secondary" onClick={reload}>
-            Refresh
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => navigate("/users/register")}>Register client</Button>
+            <Button variant="secondary" onClick={reload}>
+              Refresh
+            </Button>
+          </div>
         }
       />
       

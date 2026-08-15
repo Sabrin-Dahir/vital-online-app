@@ -59,7 +59,7 @@ class CoachClientsTabState extends State<CoachClientsTab> with TabRefreshMixin {
     beginTabLoad(isRefresh: isRefresh);
     try {
       final results = await waitIsolatedTimed<Object?>([
-        _apiService.getCoachClients(light: true),
+        _apiService.getCoachClients(),
         _apiService.getCoachRequests(),
       ], fallback: null);
       if (results.every((r) => r == null)) {

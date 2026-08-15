@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../dashboard/widgets/coach_home/coach_dashboard_theme.dart';
+import '../../../services/api_service.dart';
+import '../../../utils/password_utils.dart';
 
 class AdminSummaryStat {
   final String label;
@@ -278,3 +280,142 @@ class AdminDetailRow extends StatelessWidget {
     );
   }
 }
+
+Future<Map<String, dynamic>?> showAdminRegisterAccountDialog({
+  required BuildContext context,
+  required Future<Map<String, dynamic>> Function({
+    required String name,
+    required String email,
+    required String password,
+    String role,
+  }) createAccount,
+  required String role,
+}) {
+  return showDialog<Map<String, dynamic>>(
+    context: context,
+    builder: (ctx) => _AdminRegisterAccountDialog(
+      createAccount: createAccount,
+      role: role,
+    ),
+  );
+}
+
+class _AdminRegisterAccountDialog extends StatefulWidget {
+  final Future<Map<String, dynamic>> Function({
+    required String name,
+    required String email,
+    required String password,
+    String role,
+  }) createAccount;
+  final String role;
+
+  const _AdminRegisterAccountDialog({
+    required this.createAccount,
+    required this.role,
+  });
+
+  @override
+  State<_AdminRegisterAccountDialog> createState() => _AdminRegisterAccountDialogState();
+}
+
+class _AdminRegisterAccountDialogState extends State<_AdminRegisterAccountDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _name = TextEditingController();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  bool get _isCoach => widget.role == 'coach';
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _email.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!(_formKey.currentState?.validate() ?? false) || _saving) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final result = await widget.createAccount(
+        name: _name.text.trim(),
+        email: _email.text.trim(),
+        password: _password.text,
+        role: widget.role,
+      );
+      if (!mounted) return;
+      Navigator.pop(context, result);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = ApiService.friendlyError(e);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(_isCoach ? 'Register coach' : 'Register client'),
+      content: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _isCoach
+                    ? 'Creates an approved coach. They can sign in with this password.'
+                    : 'Creates a client account. They can sign in with this password.',
+                style: const TextStyle(fontSize: 13),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(_error!, style: const TextStyle(color: CoachDashboardTheme.danger, fontSize: 13)),
+              ],
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _name,
+                decoration: const InputDecoration(labelText: 'Full name'),
+                textCapitalization: TextCapitalization.words,
+                validator: (value) =>
+                    (value == null || value.trim().isEmpty) ? 'Full name is required' : null,
+              ),
+              TextFormField(
+                controller: _email,
+                decoration: const InputDecoration(labelText: 'Email'),
+                keyboardType: TextInputType.emailAddress,
+                validator: (value) =>
+                    (value == null || value.trim().isEmpty) ? 'Email is required' : null,
+              ),
+              TextFormField(
+                controller: _password,
+                decoration: const InputDecoration(labelText: 'Password'),
+                obscureText: true,
+                validator: PasswordUtils.validatePassword,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: _saving ? null : _submit,
+          child: Text(_saving ? 'Creating…' : (_isCoach ? 'Create coach' : 'Create client')),
+        ),
+      ],
+    );
+  }
+}
+

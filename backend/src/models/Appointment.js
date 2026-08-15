@@ -29,7 +29,7 @@ const appointmentSchema = new mongoose.Schema(
     client: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
     coach: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
     dateTime: { type: Date, default: null, index: true },
-    durationMinutes: { type: Number, default: 60 },
+    durationMinutes: { type: Number, default: 60, min: 5, max: 240 },
     type: {
       type: String,
       enum: ['user_request', 'coach_created', 'admin_created', 'booked', 'other'],

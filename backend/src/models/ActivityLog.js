@@ -4,9 +4,9 @@ const activityLogSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     date: { type: Date, default: Date.now },
-    activityType: { type: String, required: true },
-    durationMinutes: { type: Number, required: true },
-    caloriesBurned: { type: Number, default: 0 },
+    activityType: { type: String, required: true, trim: true, maxlength: 120 },
+    durationMinutes: { type: Number, required: true, min: [1, 'Duration must be at least 1 minute'], max: [24 * 60, 'Duration looks invalid'] },
+    caloriesBurned: { type: Number, default: 0, min: [0, 'Calories burned cannot be negative'], max: 20000 },
     sets: [
       {
         reps: { type: Number },

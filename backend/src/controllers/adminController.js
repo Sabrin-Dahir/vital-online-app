@@ -164,13 +164,97 @@ async function getUsers(req, res) {
 }
 
 const ADMIN_MEMBER_MGMT_FORBIDDEN =
-  'Admins cannot create, edit, suspend, assign, or reset passwords for member accounts. Members manage their own profiles; coaches manage only members who selected them and were accepted. Admins may delete member accounts when necessary.';
+  'Admins cannot edit, suspend, assign, or reset passwords for member accounts. Members manage their own profiles; coaches manage only members who selected them and were accepted. Admins may register clients and coaches, change roles, and delete accounts when necessary.';
 
-async function createUser(_req, res) {
-  return res.status(403).json({
-    message:
-      'Admins cannot create user or coach accounts. Members and coaches register in the Vital Fitness app. Admins only approve or reject coach applications and may delete accounts when necessary.',
-  });
+async function createUser(req, res) {
+  try {
+    const body = req.body || {};
+    const requestedRole = String(body.role || 'user').trim().toLowerCase();
+
+    if (!['user', 'coach'].includes(requestedRole)) {
+      return res.status(400).json({
+        message: 'Admin can only create client or coach accounts.',
+        code: 'ROLE_NOT_ALLOWED',
+      });
+    }
+
+    if (requestedRole === 'coach') {
+      const {
+        createCoachRegistration,
+        mapCoachRegistrationError,
+      } = require('../utils/createCoachRegistration');
+      try {
+        const { user } = await createCoachRegistration(body, {
+          initiatedByAdmin: true,
+          createdBy: req.user._id,
+        });
+        try {
+          await AuditLog.create({
+            actor_id: req.user._id,
+            action: 'CREATE_USER',
+            target_type: 'User',
+            target_id: user._id,
+            details: { username: user.username, role: 'coach', via: 'coach-registration-flow' },
+          });
+        } catch (auditError) {
+          console.warn('createUser audit log skipped:', auditError.message);
+        }
+        const safe = await User.findById(user._id)
+          .select('-password -admin_password')
+          .populate('profile')
+          .lean();
+        return res.status(201).json({
+          message: 'Coach account created. They can sign in immediately.',
+          user: withDisplayName(safe),
+        });
+      } catch (coachError) {
+        const mapped = mapCoachRegistrationError(coachError, res);
+        if (mapped) return mapped;
+        throw coachError;
+      }
+    }
+
+    const {
+      createMemberRegistration,
+      mapMemberRegistrationError,
+    } = require('../utils/createMemberRegistration');
+    try {
+      const { user } = await createMemberRegistration(body, {
+        initiatedByAdmin: true,
+        createdBy: req.user._id,
+      });
+      try {
+        await AuditLog.create({
+          actor_id: req.user._id,
+          action: 'CREATE_USER',
+          target_type: 'User',
+          target_id: user._id,
+          details: {
+            username: user.username,
+            role: 'user',
+            via: 'member-registration-flow',
+          },
+        });
+      } catch (auditError) {
+        console.warn('createUser audit log skipped:', auditError.message);
+      }
+      const safe = await User.findById(user._id).select('-password -admin_password').lean();
+      return res.status(201).json({
+        message: 'Client account created. They can sign in immediately.',
+        user: withDisplayName(safe),
+      });
+    } catch (memberError) {
+      const mapped = mapMemberRegistrationError(memberError, res);
+      if (mapped) return mapped;
+      throw memberError;
+    }
+  } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(409).json({ message: 'Username already exists' });
+    }
+    console.error('createUser:', error.message);
+    return res.status(500).json({ message: 'Failed to create account' });
+  }
 }
 
 async function deleteUser(req, res) {
@@ -218,8 +302,58 @@ async function deleteUser(req, res) {
   }
 }
 
-async function updateUserRole(_req, res) {
-  return res.status(403).json({ message: ADMIN_MEMBER_MGMT_FORBIDDEN });
+async function updateUserRole(req, res) {
+  try {
+    const nextRole = String(req.body?.role || '').trim().toLowerCase();
+    if (!['user', 'coach'].includes(nextRole)) {
+      return res.status(400).json({
+        message: 'Role can only be changed to client (user) or coach.',
+        code: 'ROLE_NOT_ALLOWED',
+      });
+    }
+
+    const target = await User.findById(req.params.id);
+    if (!target) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    if (target.role === 'admin') {
+      return res.status(403).json({ message: 'Admin roles cannot be changed from this endpoint' });
+    }
+    if (String(target._id) === String(req.user._id)) {
+      return res.status(403).json({ message: 'You cannot change your own role' });
+    }
+
+    const previousRole = target.role;
+    target.role = nextRole;
+    if (nextRole === 'coach') {
+      if (!target.coachData) target.coachData = {};
+      target.coachData.approval_status = 'approved';
+      target.status = 'active';
+      target.markModified('coachData');
+    }
+    await target.save();
+
+    try {
+      await AuditLog.create({
+        actor_id: req.user._id,
+        action: 'UPDATE_USER_ROLE',
+        target_type: 'User',
+        target_id: target._id,
+        details: { username: target.username, from: previousRole, to: nextRole },
+      });
+    } catch (auditError) {
+      console.warn('updateUserRole audit log skipped:', auditError.message);
+    }
+
+    const safe = await User.findById(target._id).select('-password -admin_password').lean();
+    return res.json({
+      message: `Role updated to ${nextRole === 'coach' ? 'coach' : 'client'}.`,
+      user: withDisplayName(safe),
+    });
+  } catch (error) {
+    console.error('updateUserRole:', error.message);
+    return res.status(500).json({ message: 'Failed to update role' });
+  }
 }
 
 async function updateUser(_req, res) {
@@ -449,7 +583,10 @@ async function getTrainers(req, res) {
         applicationStatus: application?.status || null,
         applicationId: application?._id || null,
         photoUrl: enriched.profile?.photoUrl || enriched.avatar || '',
-        specialization: enriched.profile?.specialization || [],
+        specialization: enriched.profile?.primarySpecialization
+          ? [enriched.profile.primarySpecialization]
+          : (enriched.profile?.specialization || []),
+        primarySpecialization: enriched.profile?.primarySpecialization || null,
       });
     }
 
@@ -477,7 +614,10 @@ async function getTrainers(req, res) {
         applicationStatus: 'pending',
         applicationId: app._id,
         photoUrl: enriched.profile?.photoUrl || enriched.avatar || '',
-        specialization: enriched.profile?.specialization || [],
+        specialization: enriched.profile?.primarySpecialization
+          ? [enriched.profile.primarySpecialization]
+          : (enriched.profile?.specialization || []),
+        primarySpecialization: enriched.profile?.primarySpecialization || null,
         status: enriched.status || 'active',
       });
     }
@@ -497,6 +637,58 @@ async function getTrainers(req, res) {
   } catch (error) {
     console.error('getTrainers:', error.message);
     return res.status(500).json({ message: 'Failed to load coaches' });
+  }
+}
+
+async function updateCoachSpecialization(req, res) {
+  try {
+    const {
+      validateSpecializationInput,
+      specializationToStorage,
+      getCoachSpecializations,
+    } = require('../utils/coachSpecialization');
+    const incoming = req.body.specializations
+      ?? req.body.specialties
+      ?? req.body.specialization
+      ?? req.body.primarySpecialization;
+    const error = validateSpecializationInput(incoming);
+    if (error) return res.status(400).json({ message: error });
+    const stored = specializationToStorage(incoming);
+
+    const coach = await User.findById(req.params.id);
+    if (!coach) return res.status(404).json({ message: 'Coach not found' });
+    if (coach.role !== 'coach') {
+      return res.status(400).json({ message: 'Specialization can only be set for coaches' });
+    }
+
+    const previous = getCoachSpecializations(coach);
+    coach.coachData = {
+      ...(coach.coachData?.toObject?.() || coach.coachData || {}),
+      primarySpecialization: stored.primarySpecialization,
+      specialties: stored.specialties,
+    };
+    coach.markModified('coachData');
+    await coach.save();
+
+    try {
+      await Profile.findOneAndUpdate(
+        { user: coach._id },
+        { $set: { specialization: stored.specialties } },
+        { upsert: false },
+      );
+    } catch (_) { /* profile optional */ }
+
+    return res.json({
+      message: 'Coach specializations updated',
+      previousSpecializations: previous,
+      specializations: stored.specialties,
+      specialties: stored.specialties,
+      specialization: stored.primarySpecialization,
+      primarySpecialization: stored.primarySpecialization,
+    });
+  } catch (error) {
+    console.error('updateCoachSpecialization:', error.message);
+    return res.status(500).json({ message: 'Failed to update specialization' });
   }
 }
 
@@ -878,11 +1070,15 @@ async function approveCoachApplication(req, res) {
 
     const application = claimed;
     const { buildCoachDataFromApplication } = require('../utils/coachProfile');
+    const { specializationToStorage } = require('../utils/coachSpecialization');
     const existingCoachData = application.user.coachData?.toObject?.()
       || application.user.coachData
       || {};
 
-    const specArray = parseSpecialization(application.specialization);
+    const storedSpec = specializationToStorage(application.specialization);
+    const specArray = storedSpec.specialties.length
+      ? storedSpec.specialties
+      : parseSpecialization(application.specialization);
     const profileData = {
       age: application.age,
       phone: application.phone,
@@ -1644,7 +1840,7 @@ async function getCoachingProgress(req, res) {
 module.exports = {
   getDashboardStats,
   getUsers, getUserDetail, getCoachDetail, getAdminMe, createUser, deleteUser, updateUserRole, updateUser, updateUserStatus,
-  getTrainers, deleteCoach,
+  getTrainers, deleteCoach, updateCoachSpecialization,
   getWorkoutStats,
   getExerciseTypes, approveExercise, rejectExercise, rejectExerciseType, deleteExerciseType,
   getMealStats,

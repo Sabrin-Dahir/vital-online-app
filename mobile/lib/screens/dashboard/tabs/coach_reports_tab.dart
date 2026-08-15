@@ -24,25 +24,12 @@ class _CoachReportsTabState extends State<CoachReportsTab> {
   }
 
   Future<void> _load() async {
-    final keepExisting = _reports != null;
-    setState(() {
-      _isLoading = true;
-      if (!keepExisting) _error = null;
-    });
+    setState(() { _isLoading = true; _error = null; });
     try {
-      final data = await _api.getCoachReports().timeout(const Duration(seconds: 25));
-      if (mounted) {
-        setState(() {
-          _reports = data;
-          _error = null;
-        });
-      }
+      final data = await _api.getCoachReports();
+      if (mounted) setState(() { _reports = data; });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = ApiService.friendlyError(e);
-        });
-      }
+      if (mounted) setState(() { _error = ApiService.friendlyError(e); });
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -60,7 +47,8 @@ class _CoachReportsTabState extends State<CoachReportsTab> {
   }
 
   Widget _buildBody(bool isDark) {
-    if (_error != null && _reports == null) {
+    if (_isLoading) return const ScrollableCenter(child: CircularProgressIndicator());
+    if (_error != null) {
       return ScrollableCenter(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -73,16 +61,7 @@ class _CoachReportsTabState extends State<CoachReportsTab> {
       );
     }
 
-    final r = _reports;
-    if (r == null) {
-      // Initial load — keep shell open; data fills in when the API returns.
-      if (_isLoading) return const SizedBox.shrink();
-      return CoachDashboardTheme.emptyState(
-        icon: Icons.insights_outlined,
-        message: 'No report data yet. Tap refresh to try again.',
-        isDark: isDark,
-      );
-    }
+    final r = _reports!;
     final activities = (r['activitiesByType'] as List<dynamic>? ?? []);
 
     return ListView(

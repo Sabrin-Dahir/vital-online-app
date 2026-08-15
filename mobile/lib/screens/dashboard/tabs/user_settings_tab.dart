@@ -11,6 +11,7 @@ import '../../../widgets/language_picker_sheet.dart';
 import '../../../widgets/scrollable_body.dart';
 import '../../../widgets/profile_avatar.dart';
 import '../../../widgets/account/change_password_dialog.dart';
+import '../../../utils/field_validation.dart';
 import '../../../widgets/silent_refresh.dart';
 
 class UserSettingsTab extends StatefulWidget {
@@ -628,10 +629,8 @@ class UserSettingsTabState extends State<UserSettingsTab> {
               prefixIcon: const Icon(Icons.person_outline_rounded),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            validator: (v) {
-              if (v == null || v.trim().isEmpty) return 'Name is required';
-              return null;
-            },
+            validator: validateFullName,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 12),
@@ -657,6 +656,15 @@ class UserSettingsTabState extends State<UserSettingsTab> {
               prefixIcon: const Icon(Icons.phone_outlined),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             ),
+            validator: (v) {
+              final phone = v?.trim() ?? '';
+              if (phone.isEmpty) return null;
+              final digits = phone.replaceAll(RegExp(r'\D'), '');
+              if (digits.length < 7 || digits.length > 15) {
+                return 'Please enter a valid phone number';
+              }
+              return null;
+            },
           ),
         ],
       ),

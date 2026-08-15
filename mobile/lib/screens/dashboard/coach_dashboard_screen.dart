@@ -16,6 +16,7 @@ import 'tabs/coach_workout_review_tab.dart';
 import 'tabs/coach_notifications_tab.dart';
 import 'tabs/coach_diet_plans_tab.dart';
 import 'tabs/coach_appointments_tab.dart';
+import 'tabs/coach_attendance_tab.dart';
 import 'widgets/coach_home/coach_dashboard_theme.dart';
 import '../auth/auth_landing_theme.dart';
 import '../../utils/coach_thread_utils.dart';
@@ -45,13 +46,13 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen> {
     (Icons.home_outlined, Icons.home_rounded),
     (Icons.people_alt_outlined, Icons.people_alt_rounded),
     (Icons.fitness_center_outlined, Icons.fitness_center_rounded),
-    (Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded),
+    (Icons.fact_check_outlined, Icons.fact_check_rounded),
     (Icons.settings_outlined, Icons.settings_rounded),
   ];
 
   List<String> _navLabels(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return [l10n.home, l10n.clients, l10n.classes, l10n.messages, l10n.settings];
+    return [l10n.home, l10n.clients, l10n.classes, 'Attendance', l10n.settings];
   }
 
   @override
@@ -101,8 +102,6 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen> {
       });
     } else if (index == 2) {
       _classesTabKey.currentState?.refresh();
-    } else if (index == 3) {
-      _loadUnreadMessageCount();
     }
   }
 
@@ -125,14 +124,7 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen> {
   void _onNavigate(int index) => _onTabSelected(index);
 
   void _openSection(Widget screen) {
-    AppNavigator.push(context, screen).then((_) {
-      if (!mounted) return;
-      _homeTabKey.currentState?.refresh();
-      _clientsTabKey.currentState?.refresh();
-      _classesTabKey.currentState?.refresh();
-      _loadPendingRequestCount();
-      _loadUnreadMessageCount();
-    });
+    AppNavigator.push(context, screen);
   }
 
   void _onCoachUpdated(User updated) => setState(() => _currentCoach = updated);
@@ -155,7 +147,7 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen> {
           },
         ),
         CoachClassesTab(key: _classesTabKey),
-        CoachChatTab(onUnreadChanged: _loadUnreadMessageCount),
+        const CoachAttendanceTab(),
         CoachSettingsTab(
           coach: _currentCoach,
           onLogout: _handleLogout,
@@ -185,7 +177,6 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen> {
           final (inactive, active) = _navIcons[i];
           int? badge;
           if (i == 1) badge = _pendingClientRequestCount;
-          if (i == 3) badge = _unreadMessageCount;
           return AnimatedNavItem(
             inactiveIcon: inactive,
             activeIcon: active,
@@ -264,6 +255,13 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen> {
                 _drawerLabel('INSIGHTS', isDark),
                 _buildDrawerPush(Icons.show_chart_rounded, 'Client Progress', const CoachProgressTab(), isDark),
                 _buildDrawerPush(Icons.analytics_rounded, 'Reports', const CoachReportsTab(), isDark),
+                _buildDrawerPush(
+                  Icons.chat_bubble_rounded,
+                  'Messages',
+                  CoachChatTab(onUnreadChanged: _loadUnreadMessageCount),
+                  isDark,
+                  badge: _unreadMessageCount,
+                ),
                 const SizedBox(height: 8),
                 _drawerLabel('GENERAL', isDark),
                 _buildDrawerPush(Icons.event_available_rounded, 'Appointments', const CoachAppointmentsTab(), isDark),
@@ -284,7 +282,13 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen> {
     );
   }
 
-  Widget _buildDrawerPush(IconData icon, String title, Widget screen, bool isDark) {
+  Widget _buildDrawerPush(
+    IconData icon,
+    String title,
+    Widget screen,
+    bool isDark, {
+    int badge = 0,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
       child: ListTile(
@@ -292,7 +296,19 @@ class _CoachDashboardScreenState extends State<CoachDashboardScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         leading: Icon(icon, size: 20, color: isDark ? Colors.white54 : CoachDashboardTheme.textSecondary),
         title: Text(title, style: TextStyle(fontSize: 14, color: isDark ? Colors.white70 : CoachDashboardTheme.textPrimary)),
-        trailing: Icon(Icons.chevron_right_rounded, size: 18, color: isDark ? Colors.white24 : Colors.black26),
+        trailing: badge > 0
+            ? Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: CoachDashboardTheme.warning,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  badge > 99 ? '99+' : '$badge',
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
+                ),
+              )
+            : Icon(Icons.chevron_right_rounded, size: 18, color: isDark ? Colors.white24 : Colors.black26),
         onTap: () {
           Navigator.pop(context);
           _openSection(screen);

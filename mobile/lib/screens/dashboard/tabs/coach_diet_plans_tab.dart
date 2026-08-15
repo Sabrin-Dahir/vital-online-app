@@ -5,6 +5,7 @@ import '../../../models/diet_plan_completion_model.dart';
 import '../../../models/diet_plan_model.dart';
 import '../../../models/diet_today_progress_model.dart';
 import '../../../services/api_service.dart';
+import '../../../utils/coach_specialization.dart';
 import '../../../utils/date_utils.dart';
 import '../../../widgets/diet_progress_panel.dart';
 import '../../../widgets/scrollable_body.dart';
@@ -571,6 +572,9 @@ class _CoachDietPlansTabState extends State<CoachDietPlansTab> with SingleTicker
 
   Widget _buildCompletionBody(bool isDark, [List<DietPlanCompletion>? items]) {
     final list = items ?? _filteredCompletions;
+    if (_completionLoading) {
+      return const Center(child: CircularProgressIndicator(color: CoachDashboardTheme.primary));
+    }
     if (_completionError.isNotEmpty) {
       return Center(child: Text(_completionError, textAlign: TextAlign.center));
     }
@@ -846,7 +850,12 @@ class _CoachDietPlansTabState extends State<CoachDietPlansTab> with SingleTicker
               const SizedBox(height: 10),
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
-                child: const SizedBox.shrink(),
+                child: LinearProgressIndicator(
+                  value: (item.progressPercent / 100).clamp(0.0, 1.0),
+                  minHeight: 6,
+                  backgroundColor: isDark ? Colors.white12 : Colors.black12,
+                  color: statusColor,
+                ),
               ),
               const SizedBox(height: 8),
               InkWell(
@@ -1046,11 +1055,11 @@ class _CoachDietPlansTabState extends State<CoachDietPlansTab> with SingleTicker
   }
 
   Widget _buildBody(bool isDark) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(color: CoachDashboardTheme.primary));
+    }
     if (_error.isNotEmpty) {
       return Center(child: Text(_error, textAlign: TextAlign.center));
-    }
-    if (_loading && _plans.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
     }
     if (_plans.isEmpty) {
       return Center(
@@ -1274,6 +1283,7 @@ class _CoachDietPlanEditorScreenState extends State<CoachDietPlanEditorScreen> w
   final _caloriesCtrl = TextEditingController(text: '2000');
   final _notesCtrl = TextEditingController();
   String _goal = 'maintenance';
+  List<String> _coachSpecializations = const [];
   String _planType = 'single_day'; // single_day | weekly
   int? _singleDayIndex; // single_day: which weekday is checked
   /// Weekly: Monday of the plan week — each day gets a calendar date from this.
@@ -1288,6 +1298,7 @@ class _CoachDietPlanEditorScreenState extends State<CoachDietPlanEditorScreen> w
   void initState() {
     super.initState();
     _tabs = TabController(length: widget.createMode ? 1 : 2, vsync: this);
+    _loadCoachSpecialization();
     if (!widget.createMode) {
       _tabs.addListener(_onTabChanged);
     }
@@ -1306,6 +1317,21 @@ class _CoachDietPlanEditorScreenState extends State<CoachDietPlanEditorScreen> w
       await _loadAssignees();
     }
     await _load();
+  }
+
+  Future<void> _loadCoachSpecialization() async {
+    try {
+      final me = await _api.getMe();
+      if (!mounted || me == null) return;
+      final specs = coachSpecializationsFromUser(me);
+      final goals = allowedDietGoals(specs);
+      setState(() {
+        _coachSpecializations = specs;
+        if (!goals.contains(_goal) && goals.isNotEmpty) {
+          _goal = goals.first;
+        }
+      });
+    } catch (_) {}
   }
 
   Future<void> _loadAssignees() async {
@@ -1436,7 +1462,8 @@ class _CoachDietPlanEditorScreenState extends State<CoachDietPlanEditorScreen> w
     _titleCtrl.text = 'Diet Plan';
     _caloriesCtrl.text = '2000';
     _notesCtrl.clear();
-    _goal = 'maintenance';
+    final dietGoals = allowedDietGoals(_coachSpecializations);
+    _goal = dietGoals.isNotEmpty ? dietGoals.first : 'maintenance';
     _planType = 'single_day';
     _weeklySelectedDays.clear();
     _singleDayIndex = DietDay.mondayBasedDayOfWeek();
@@ -1686,6 +1713,17 @@ class _CoachDietPlanEditorScreenState extends State<CoachDietPlanEditorScreen> w
       return;
     }
 
+    final calories = int.tryParse(_caloriesCtrl.text.trim());
+    if (calories == null || calories < 1 || calories > 20000) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Daily calories must be a positive number (1–20000).'),
+          backgroundColor: CoachDashboardTheme.warning,
+        ),
+      );
+      return;
+    }
+
     if (status == 'active') {
       final missingTimes = _activeBucket.missingMealTimes();
       if (missingTimes.isNotEmpty) {
@@ -1708,7 +1746,7 @@ class _CoachDietPlanEditorScreenState extends State<CoachDietPlanEditorScreen> w
         'title': _titleCtrl.text.trim(),
         'goal': _goal,
         'planType': _planType,
-        'dailyCalories': int.tryParse(_caloriesCtrl.text) ?? 2000,
+        'dailyCalories': calories,
         'notes': _notesCtrl.text.trim(),
         'status': status,
         if (confirmSupersede) 'confirmSupersede': true,
@@ -1842,7 +1880,9 @@ class _CoachDietPlanEditorScreenState extends State<CoachDietPlanEditorScreen> w
               unselectedLabelColor: isDark ? Colors.white54 : CoachDashboardTheme.textSecondary,
               tabs: const [Tab(text: 'Plan'), Tab(text: 'Progress')],
             ),
-      body: widget.createMode
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : widget.createMode
               ? _buildPlanForm(isDark, readOnly: readOnly)
               : TabBarView(
                   controller: _tabs,
@@ -1921,11 +1961,7 @@ class _CoachDietPlanEditorScreenState extends State<CoachDietPlanEditorScreen> w
               final id = cls['_id']?.toString() ?? '';
               final name = cls['title']?.toString() ?? 'Group';
               final count = cls['enrolledCount'] as int? ?? (cls['enrolledStudents'] as List?)?.length ?? 0;
-              final memberLabel = count == 1 ? '1 Member' : '$count Members';
-              return DropdownMenuItem(
-                value: id,
-                child: Text('$name — $memberLabel', overflow: TextOverflow.ellipsis),
-              );
+              return DropdownMenuItem(value: id, child: Text('$name ($count members)'));
             }).toList(),
             onChanged: readOnly
                 ? null
@@ -1973,14 +2009,26 @@ class _CoachDietPlanEditorScreenState extends State<CoachDietPlanEditorScreen> w
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          value: _goal,
+          value: allowedDietGoals(_coachSpecializations).contains(_goal)
+              ? _goal
+              : (allowedDietGoals(_coachSpecializations).isNotEmpty
+                  ? allowedDietGoals(_coachSpecializations).first
+                  : null),
           decoration: CoachDashboardTheme.fieldDecoration(isDark: isDark, label: 'Goal'),
-          items: const [
-            DropdownMenuItem(value: 'weight_loss', child: Text('Weight Loss')),
-            DropdownMenuItem(value: 'muscle_gain', child: Text('Muscle Gain')),
-            DropdownMenuItem(value: 'maintenance', child: Text('Maintenance')),
+          items: [
+            if (allowedDietGoals(_coachSpecializations).contains('weight_loss'))
+              const DropdownMenuItem(value: 'weight_loss', child: Text('Weight Loss')),
+            if (allowedDietGoals(_coachSpecializations).contains('muscle_gain'))
+              const DropdownMenuItem(value: 'muscle_gain', child: Text('Muscle Gain')),
+            if (allowedDietGoals(_coachSpecializations).contains('maintenance'))
+              const DropdownMenuItem(value: 'maintenance', child: Text('Maintenance')),
           ],
-          onChanged: readOnly ? null : (v) => setState(() => _goal = v ?? 'maintenance'),
+          onChanged: readOnly
+              ? null
+              : (v) => setState(() {
+                    final goals = allowedDietGoals(_coachSpecializations);
+                    _goal = v ?? (goals.isNotEmpty ? goals.first : 'maintenance');
+                  }),
         ),
         const SizedBox(height: 12),
         TextField(
@@ -2271,7 +2319,7 @@ class _CoachDietPlanEditorScreenState extends State<CoachDietPlanEditorScreen> w
                   ? null
                   : () => _save(status: 'active'),
               child: _saving
-                  ? const SizedBox(width: 20, height: 20, child: const SizedBox.shrink())
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                   : Text(widget.createMode ? 'Create & Send Plan' : 'Save & Send Plan'),
             ),
           ),
@@ -2347,6 +2395,10 @@ class _CoachDietPlanEditorScreenState extends State<CoachDietPlanEditorScreen> w
   }
 
   Widget _buildProgressTab(bool isDark) {
+    if (_progressLoading) {
+      return const Center(child: CircularProgressIndicator(color: CoachDashboardTheme.primary));
+    }
+
     final mealFollowed = Map<String, bool>.from(_progressMealFollowed);
     if (mealFollowed.isEmpty) {
       for (final entry in _todayProgress.mealAdherence) {

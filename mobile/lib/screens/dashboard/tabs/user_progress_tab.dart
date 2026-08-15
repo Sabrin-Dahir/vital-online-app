@@ -8,6 +8,7 @@ import '../../../widgets/tab_refresh.dart';
 import '../../../widgets/animations/animations.dart';
 import 'dart:math' as math;
 import '../../../utils/async_load.dart';
+import '../../../utils/field_validation.dart';
 import '../../../utils/share_helpers.dart';
 import '../invite_friends_screen.dart';
 
@@ -113,26 +114,31 @@ class UserProgressTabState extends State<UserProgressTab> with SingleTickerProvi
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: CoachDashboardTheme.primary, foregroundColor: Colors.white),
               onPressed: () async {
-                final w = double.tryParse(ctrl.text.trim());
-                if (w != null && w > 0) {
-                  Navigator.pop(ctx);
-                  try {
-                    await _apiService.updateProfile(weightKg: w);
-                    if (mounted) {
-                      // Update local state copy — Profile is immutable, so we store locally
-                      setState(() => _localWeightKg = w);
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('✅ Weight logged!'),
-                        backgroundColor: Colors.green,
-                      ));
-                    }
-                  } catch (e) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text('Error: $e'),
-                        backgroundColor: Colors.redAccent,
-                      ));
-                    }
+                final error = validateWeight(ctrl.text);
+                if (error != null) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(error),
+                    backgroundColor: Colors.redAccent,
+                  ));
+                  return;
+                }
+                final w = double.parse(ctrl.text.trim());
+                Navigator.pop(ctx);
+                try {
+                  await _apiService.updateProfile(weightKg: w);
+                  if (mounted) {
+                    setState(() => _localWeightKg = w);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('✅ Weight logged!'),
+                      backgroundColor: Colors.green,
+                    ));
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(ApiService.friendlyError(e)),
+                      backgroundColor: Colors.redAccent,
+                    ));
                   }
                 }
               },
@@ -146,18 +152,12 @@ class UserProgressTabState extends State<UserProgressTab> with SingleTickerProvi
 
   double get _bmi {
     final h = widget.user.profile?.heightCm;
-    // Prefer the locally updated weight over the widget's initial value
     final w = _localWeightKg ?? widget.user.profile?.weightKg;
-    if (h == null || w == null || h == 0) return 0;
-    return w / ((h / 100) * (h / 100));
+    return calcBmi(h, w) ?? 0;
   }
 
   String _bmiCategory(double bmi) {
-    if (bmi == 0) return 'Unknown';
-    if (bmi < 18.5) return 'Underweight';
-    if (bmi < 25) return 'Normal Weight';
-    if (bmi < 30) return 'Overweight';
-    return 'Obese';
+    return bmiCategory(bmi) ?? 'Unknown';
   }
 
   Color _bmiColor(double bmi) {

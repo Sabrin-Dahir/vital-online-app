@@ -98,7 +98,38 @@ function coachDataToProfile(coachData = {}, phone = '', extras = {}) {
     location: data.location || extras.location || '',
     bio: data.bio || extras.bio || '',
     experience: data.experience || extras.experience || '',
-    specialization: data.specialties ?? data.specialization ?? asStringList(extras.specialization),
+    specialization: (() => {
+      const {
+        normalizeSpecializationList,
+      } = require('./coachSpecialization');
+      const fromSpecialties = normalizeSpecializationList(data.specialties);
+      if (fromSpecialties.length) return fromSpecialties;
+      const fromPrimary = normalizeSpecializationList(data.primarySpecialization);
+      if (fromPrimary.length) return fromPrimary;
+      return normalizeSpecializationList(
+        data.specialization ?? extras.specialization,
+      );
+    })(),
+    primarySpecialization: (() => {
+      const {
+        normalizeSpecializationList,
+        normalizeSpecialization,
+      } = require('./coachSpecialization');
+      return normalizeSpecializationList(data.specialties)[0]
+        || normalizeSpecialization(data.primarySpecialization)
+        || normalizeSpecializationList(
+          data.specialization ?? extras.specialization,
+        )[0]
+        || null;
+    })(),
+    specializations: (() => {
+      const { normalizeSpecializationList } = require('./coachSpecialization');
+      const fromSpecialties = normalizeSpecializationList(data.specialties);
+      if (fromSpecialties.length) return fromSpecialties;
+      return normalizeSpecializationList(
+        data.primarySpecialization ?? data.specialization ?? extras.specialization,
+      );
+    })(),
     yearsExperience: data.years_experience ?? data.yearsExperience ?? extras.yearsExperience ?? null,
     certifications,
     workingDays: availability.workingDays ?? data.workingDays ?? extras.workingDays ?? [],
@@ -216,9 +247,14 @@ function buildCoachDataFromApplication({
   workingHoursEnd = '17:00',
   certificateFiles = [],
 } = {}) {
+  const {
+    specializationToStorage,
+  } = require('./coachSpecialization');
+  const stored = specializationToStorage(specialization);
   return {
     approval_status,
-    specialties: asStringList(specialization),
+    primarySpecialization: stored.primarySpecialization,
+    specialties: stored.specialties.length ? stored.specialties : asStringList(specialization),
     certifications: asStringList(certifications),
     certificateFiles: Array.isArray(certificateFiles) ? certificateFiles : [],
     bio: String(bio || '').trim(),

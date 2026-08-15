@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
+import '../../utils/field_validation.dart';
+import '../../utils/coach_specialization.dart';
 import '../../utils/password_utils.dart';
 import '../../widgets/scrollable_body.dart';
 import '../dashboard/widgets/coach_home/coach_dashboard_theme.dart';
@@ -10,8 +12,12 @@ import 'login_screen.dart';
 /// Member (client) self-registration — same `/auth/register` API as the web.
 /// After signup, routes through [AuthHome] like login (role gates + password),
 /// then opens the Coaches tab (web `/member/coaches`).
+/// When [adminCreating] is true, an admin fills this same form and the account
+/// is created via `POST /admin/users` without signing in as the new member.
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+  final bool adminCreating;
+
+  const RegisterScreen({super.key, this.adminCreating = false});
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -28,7 +34,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _weightController = TextEditingController();
 
   String _gender = 'Male';
-  String _fitnessGoal = 'maintain';
+  String _fitnessGoal = 'General Fitness';
   bool _obscurePassword = true;
   bool _isLoading = false;
   String? _errorMessage;
@@ -36,12 +42,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   final _apiService = ApiService();
 
-  static const _fitnessGoals = <MapEntry<String, String>>[
-    MapEntry('maintain', 'Maintain'),
-    MapEntry('lose_weight', 'Lose weight'),
-    MapEntry('gain_muscle', 'Gain muscle'),
-    MapEntry('other', 'General'),
-  ];
+  static final _fitnessGoals =
+      fitnessGoals.map((g) => MapEntry(g, g)).toList();
 
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
@@ -53,6 +55,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     try {
+      if (widget.adminCreating) {
+        final created = await _apiService.createAdminUser(
+          name: _nameController.text.trim(),
+          email: PasswordUtils.normalizeEmail(_usernameController.text),
+          password: _passwordController.text,
+          role: 'user',
+          phone: _phoneController.text.trim(),
+          gender: _gender,
+          age: _ageController.text.trim().isNotEmpty
+              ? int.tryParse(_ageController.text.trim())
+              : null,
+          heightCm: _heightController.text.trim().isNotEmpty
+              ? double.tryParse(_heightController.text.trim())
+              : null,
+          weightKg: _weightController.text.trim().isNotEmpty
+              ? double.tryParse(_weightController.text.trim())
+              : null,
+          fitnessGoal: _fitnessGoal,
+        );
+        if (!mounted) return;
+        Navigator.of(context).pop(created);
+        return;
+      }
+
       final user = await _apiService.register(
         fullName: _nameController.text.trim(),
         username: PasswordUtils.normalizeEmail(_usernameController.text),
@@ -196,8 +222,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         _Banner(
                           message: _errorMessage!,
                           color: CoachDashboardTheme.danger,
-                          action: (_errorMessage!.toLowerCase().contains('already') ||
-                                  _errorMessage!.toLowerCase().contains('sign in'))
+                          action: (!widget.adminCreating &&
+                                  (_errorMessage!.toLowerCase().contains('already') ||
+                                      _errorMessage!.toLowerCase().contains('sign in')))
                               ? TextButton(
                                   onPressed: () {
                                     Navigator.of(context).pushAndRemoveUntil(
@@ -222,12 +249,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           icon: Icons.person_outline,
                           isDark: isDark,
                         ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Please enter your full name';
-                          }
-                          return null;
-                        },
+                        validator: validateFullName,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
                       ),
                       const SizedBox(height: 12),
 
@@ -235,22 +258,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         controller: _usernameController,
                         keyboardType: TextInputType.emailAddress,
                         autocorrect: false,
+                        enableSuggestions: !widget.adminCreating,
+                        autofillHints: widget.adminCreating
+                            ? const []
+                            : const [AutofillHints.email],
                         decoration: _decoration(
                           label: 'Email',
                           icon: Icons.email_outlined,
                           isDark: isDark,
                           helper: 'Used to sign in to your account.',
                         ),
-                        validator: (value) {
-                          final email = value?.trim() ?? '';
-                          if (email.isEmpty) {
-                            return 'Please enter your email';
-                          }
-                          if (!email.contains('@') || email.length < 5) {
-                            return 'Please enter a valid email';
-                          }
-                          return null;
-                        },
+                        validator: validateEmail,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
                       ),
                       const SizedBox(height: 12),
 
@@ -262,12 +281,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           icon: Icons.phone_outlined,
                           isDark: isDark,
                         ),
+                        validator: (value) {
+                          final phone = value?.trim() ?? '';
+                          if (phone.isEmpty) return null;
+                          final digits = phone.replaceAll(RegExp(r'\D'), '');
+                          if (digits.length < 7 || digits.length > 15) {
+                            return 'Please enter a valid phone number';
+                          }
+                          return null;
+                        },
                       ),
                       const SizedBox(height: 12),
 
                       TextFormField(
                         controller: _passwordController,
                         obscureText: _obscurePassword,
+                        enableSuggestions: false,
+                        autofillHints: widget.adminCreating
+                            ? const []
+                            : const [AutofillHints.newPassword],
                         decoration: _decoration(
                           label: 'Password',
                           icon: Icons.lock_outline,
@@ -333,18 +365,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 icon: Icons.cake_outlined,
                                 isDark: isDark,
                               ),
+                              validator: validateAge,
+                              autovalidateMode: AutovalidateMode.onUserInteraction,
                             ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: TextFormField(
                               controller: _heightController,
-                              keyboardType: TextInputType.number,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
                               decoration: _decoration(
                                 label: 'Height (cm)',
                                 icon: Icons.height,
                                 isDark: isDark,
                               ),
+                              validator: validateHeight,
+                              autovalidateMode: AutovalidateMode.onUserInteraction,
                             ),
                           ),
                         ],
@@ -353,12 +389,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                       TextFormField(
                         controller: _weightController,
-                        keyboardType: TextInputType.number,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         decoration: _decoration(
                           label: 'Weight (kg)',
                           icon: Icons.monitor_weight_outlined,
                           isDark: isDark,
                         ),
+                        validator: validateWeight,
+                        autovalidateMode: AutovalidateMode.onUserInteraction,
                       ),
                       const SizedBox(height: 12),
 

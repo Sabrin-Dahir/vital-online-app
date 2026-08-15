@@ -49,7 +49,9 @@ class _CoachNotificationsTabState extends State<CoachNotificationsTab> {
     return CoachPage(
       title: 'Notifications',
       actions: [IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _fetchNotifications)],
-      body: _errorMessage.isNotEmpty
+      body: _isLoading
+          ? const ScrollableCenter(child: CircularProgressIndicator())
+          : _errorMessage.isNotEmpty
               ? ScrollableCenter(child: Text('Error: $_errorMessage'))
               : _notifications.isEmpty
           ? CoachDashboardTheme.emptyState(

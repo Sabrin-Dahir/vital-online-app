@@ -70,11 +70,23 @@ export const getCoachDetail = (id) =>
 export const updateUserStatus = (id, status) =>
   api.patch(`/admin/users/${id}/status`, { status }).then((r) => r.data);
 
-/** @deprecated Admin member mutations are forbidden (403). */
+export const createUser = (data) =>
+  api.post("/admin/users", data).then((r) => r.data);
+
+/** Admin creates a member using the same payload as public /auth/register. */
+export const registerMemberAdmin = (data) =>
+  api.post("/admin/users", { ...data, role: "user" }).then((r) => r.data);
+
+export const registerCoachAdmin = (data) =>
+  api.post("/admin/users", { ...data, role: "coach" }).then((r) => r.data);
+
+export const validateCoachCertificate = (data) =>
+  api.post("/auth/validate-coach-certificate", data).then((r) => r.data);
+
 export const updateUserRole = (id, role) =>
   api.patch(`/admin/users/${id}/role`, { role }).then((r) => r.data);
 
-/** @deprecated Admin member mutations are forbidden (403). */
+/** @deprecated Admin profile/status mutations are forbidden (403). */
 export const updateUser = (id, data) =>
   api.patch(`/admin/users/${id}`, data).then((r) => r.data);
 
@@ -103,6 +115,18 @@ export const getTrainersMeta = () =>
 
 export const deleteCoach = (id) =>
   api.delete(`/admin/trainers/${id}`).then((r) => r.data);
+
+export const updateCoachSpecialization = (id, specialization) =>
+  api
+    .patch(`/admin/trainers/${id}/specialization`, {
+      specializations: Array.isArray(specialization)
+        ? specialization
+        : [specialization].filter(Boolean),
+      specialization: Array.isArray(specialization)
+        ? specialization
+        : specialization,
+    })
+    .then((r) => r.data);
 
 export const getCoachApplications = (status) =>
   api

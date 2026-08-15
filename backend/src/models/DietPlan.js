@@ -12,12 +12,22 @@ const mealSchema = new mongoose.Schema({
   /** Structured food items (optional; description still supported) */
   foodItems: { type: [String], default: [] },
   portionSize: { type: String, default: '' },
-  calories: { type: Number, default: 0, min: 0 },
-  protein: { type: Number, default: 0, min: 0 },
-  carbs: { type: Number, default: 0, min: 0 },
-  fats: { type: Number, default: 0, min: 0 },
+  calories: { type: Number, default: 0, min: [0, 'Calories cannot be negative'], max: [20000, 'Calories is unrealistically high'] },
+  protein: { type: Number, default: 0, min: [0, 'Protein cannot be negative'], max: [20000, 'Protein is unrealistically high'] },
+  carbs: { type: Number, default: 0, min: [0, 'Carbohydrates cannot be negative'], max: [20000, 'Carbohydrates is unrealistically high'] },
+  fats: { type: Number, default: 0, min: [0, 'Fat cannot be negative'], max: [20000, 'Fat is unrealistically high'] },
   /** Local wall-clock reminder, e.g. "08:00" */
-  reminderTime: { type: String, default: '' },
+  reminderTime: {
+    type: String,
+    default: '',
+    validate: {
+      validator(value) {
+        if (!value) return true;
+        return /^([01]\d|2[0-3]):([0-5]\d)$/.test(String(value).trim());
+      },
+      message: 'Meal time must be a valid time (HH:MM)',
+    },
+  },
   prepInstructions: { type: String, default: '' },
   mealNotes: { type: String, default: '' },
 }, { _id: true });
@@ -34,7 +44,7 @@ const dietPlanSchema = new mongoose.Schema({
   coach: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   client: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   fitnessClass: { type: mongoose.Schema.Types.ObjectId, ref: 'FitnessClass' },
-  title: { type: String, default: 'Diet Plan' },
+  title: { type: String, default: 'Diet Plan', trim: true, maxlength: [120, 'Diet plan title is too long'] },
   goal: {
     type: String,
     enum: ['weight_loss', 'muscle_gain', 'maintenance'],

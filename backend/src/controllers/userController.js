@@ -7,6 +7,13 @@ const FitnessClass = require('../models/FitnessClass');
 const WorkoutSchedule = require('../models/WorkoutSchedule');
 const Notification = require('../models/Notification');
 const { validationResult } = require('express-validator');
+const {
+  validatePhone,
+  validateFullName,
+  validateMemberProfileFields,
+  validateFitnessGoal,
+} = require('../utils/fieldValidation');
+const { sendValidationError } = require('../middleware/validateRequest');
 const onboardingAgent = require('../agents/onboardingAgent');
 const { getCoachRatingSummary } = require('./reviewController');
 const { pickDefined, UPDATE_OPTIONS } = require('../utils/safeUpdate');
@@ -95,6 +102,8 @@ async function getProfile(req, res) {
     }
 
     const { enrichCoachUser } = require('../utils/coachProfile');
+    const calcBmi = require('../utils/calcBmi');
+    const { bmiCategory } = require('../utils/calcBmi');
     const CoachApplication = require('../models/CoachApplication');
     let profile;
     if (user.role === 'coach' || user.coachData) {
@@ -103,10 +112,15 @@ async function getProfile(req, res) {
     } else {
       const client = user.clientData || {};
       const assigned = client.assigned_coach_id;
+      const heightCm = client.height ?? null;
+      const weightKg = client.weight ?? null;
+      const bmi = calcBmi(heightCm, weightKg);
       profile = {
         age: client.age ?? null,
-        heightCm: client.height ?? null,
-        weightKg: client.weight ?? null,
+        heightCm,
+        weightKg,
+        bmi,
+        bmiCategory: bmiCategory(bmi),
         gender: client.gender || '',
         fitness_goal: client.fitness_goal || '',
         activity_level: client.activity_level || '',
@@ -166,12 +180,38 @@ async function updateProfile(req, res) {
 
     const body = req.body || {};
 
+    // BMI is derived from height + weight — never accept client overrides.
+    if (body.bmi !== undefined || body.bmiCategory !== undefined) {
+      return sendValidationError(
+        res,
+        'BMI is calculated automatically from height and weight.',
+      );
+    }
+
     // Clients must never escalate their own role via profile updates.
     if (body.role !== undefined) {
       return res.status(400).json({
         message: 'Role cannot be changed from this endpoint.',
         code: 'ROLE_IMMUTABLE',
       });
+    }
+
+    if (body.full_name !== undefined || body.fullName !== undefined || body.name !== undefined) {
+      const nextName = String(body.full_name ?? body.fullName ?? body.name ?? '').trim();
+      if (nextName) {
+        const nameError = validateFullName(nextName);
+        if (nameError) return sendValidationError(res, nameError);
+      }
+    }
+    if (body.phone !== undefined) {
+      const phoneError = validatePhone(body.phone, { required: false });
+      if (phoneError) return sendValidationError(res, phoneError);
+    }
+    const profileFieldError = validateMemberProfileFields(body);
+    if (profileFieldError) return sendValidationError(res, profileFieldError);
+    if (body.fitness_goal !== undefined || body.fitnessGoal !== undefined) {
+      const goalError = validateFitnessGoal(body.fitness_goal ?? body.fitnessGoal);
+      if (goalError) return sendValidationError(res, goalError);
     }
 
     // Display name — allowed for all roles (does not change login username/email).
@@ -184,15 +224,18 @@ async function updateProfile(req, res) {
       if (!user.coachData) user.coachData = {};
       if (body.bio !== undefined) user.coachData.bio = String(body.bio || '');
       if (body.experience !== undefined) user.coachData.experience = String(body.experience || '');
-      if (body.location !== undefined) user.coachData.location = String(body.location || '');
-      if (body.specialization !== undefined) {
-        const specs = Array.isArray(body.specialization)
-          ? body.specialization.map((s) => String(s).trim()).filter(Boolean)
-          : String(body.specialization || '')
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean);
-        user.coachData.specialties = specs;
+      if (body.location !== undefined) {
+        const { validateSomaliaRegion, matchSomaliaRegion } = require('../utils/fieldValidation');
+        const locationError = validateSomaliaRegion(body.location);
+        if (locationError) return sendValidationError(res, locationError);
+        user.coachData.location = matchSomaliaRegion(body.location);
+      }
+      // Coaches cannot change their own specialization — Admin sets it at registration/approval.
+      if (body.specialization !== undefined || body.primarySpecialization !== undefined) {
+        return sendValidationError(
+          res,
+          'Specialization can only be set by an admin. Contact support if you need it changed.',
+        );
       }
       if (body.yearsExperience !== undefined || body.years_experience !== undefined) {
         const years = body.yearsExperience ?? body.years_experience;
@@ -232,21 +275,43 @@ async function updateProfile(req, res) {
         user.clientData.medical_notes = String(body.medical_notes ?? body.medicalNotes ?? '');
       }
       if (body.fitness_goal !== undefined || body.fitnessGoal !== undefined || body.goals !== undefined) {
+        const {
+          normalizeFitnessGoal,
+          coachMatchesFitnessGoal,
+        } = require('../utils/coachSpecialization');
         let goal = body.fitness_goal ?? body.fitnessGoal;
         if (!goal && Array.isArray(body.goals) && body.goals.length) {
-          const label = String(body.goals[0]).toLowerCase();
-          if (label.includes('weight')) goal = 'lose_weight';
-          else if (label.includes('muscle')) goal = 'gain_muscle';
-          else if (label.includes('maintain')) goal = 'maintain';
-          else goal = 'other';
+          goal = body.goals[0];
         }
-        if (goal) user.clientData.fitness_goal = goal;
+        const normalized = normalizeFitnessGoal(goal);
+        if (normalized) {
+          const previousGoal = normalizeFitnessGoal(user.clientData.fitness_goal);
+          user.clientData.fitness_goal = normalized;
+
+          // Cancel pending requests that no longer match the new goal (keep active assignments).
+          if (previousGoal !== normalized) {
+            const pending = await CoachRequest.findOne({
+              user: user._id,
+              status: 'pending',
+            }).populate('coach', 'coachData profile specialization');
+            if (pending?.coach && !coachMatchesFitnessGoal(pending.coach, normalized)) {
+              pending.status = 'cancelled';
+              pending.reviewedAt = new Date();
+              await pending.save();
+              Notification.create({
+                user: pending.coach._id || pending.coach,
+                message: `${user.full_name || user.username} withdrew their coaching request after changing their fitness goal.`,
+                type: 'update',
+              }).catch((err) => console.warn('goal-change cancel notify:', err.message));
+            }
+          }
+        }
       }
       if (body.phone !== undefined) user.phone = String(body.phone || '').trim();
       user.markModified('clientData');
     }
 
-    await user.save();
+    await user.save({ validateModifiedOnly: true });
 
     const fresh = await User.findById(user._id)
       .populate('clientData.assigned_coach_id', 'username full_name phone')
@@ -255,7 +320,8 @@ async function updateProfile(req, res) {
     return getProfile(req, res);
   } catch (error) {
     console.error('[USER] updateProfile error:', error.message);
-    return res.status(500).json({ message: 'Unable to update profile' });
+    const { respondWithCaughtError } = require('../utils/httpErrors');
+    return respondWithCaughtError(res, error, 'Unable to update profile');
   }
 }
 
@@ -407,6 +473,11 @@ async function getTrainers(req, res) {
       return res.status(403).json({ message: 'Coach profiles are not visible to other coaches' });
     }
 
+    const {
+      getClientFitnessGoal,
+      coachMatchesFitnessGoal,
+    } = require('../utils/coachSpecialization');
+
     if (req.user.role === 'user') {
       const selectedCoachId = await getUserSelectedCoachId(req.user._id);
       if (selectedCoachId) {
@@ -417,6 +488,27 @@ async function getTrainers(req, res) {
         const withCerts = await withPublicCertificateFiles(trainer);
         return res.json(withCerts && isApprovedPublicCoach(withCerts) ? [formatPublicCoach(withCerts)] : []);
       }
+
+      const member = await User.findById(req.user._id).select('clientData').lean();
+      const fitnessGoal = getClientFitnessGoal(member);
+      if (!fitnessGoal) {
+        return res.json([]);
+      }
+
+      const coachFilter = await buildMemberVisibleCoachFilter();
+      const trainers = await User.find(coachFilter)
+        .select(PUBLIC_COACH_SELECT)
+        .sort({ full_name: 1, username: 1 })
+        .lean();
+
+      const withCerts = await withPublicCertificateFiles(trainers);
+      const matched = withCerts
+        .filter(isApprovedPublicCoach)
+        .filter((coach) => coachMatchesFitnessGoal(coach, fitnessGoal))
+        .map(formatPublicCoach)
+        .filter(Boolean);
+
+      return res.json(matched);
     }
 
     const coachFilter = await buildMemberVisibleCoachFilter();
@@ -459,6 +551,23 @@ async function getTrainerById(req, res) {
     const withCerts = await withPublicCertificateFiles(trainer);
     if (!withCerts || !isApprovedPublicCoach(withCerts)) {
       return res.status(404).json({ message: 'Coach not found' });
+    }
+
+    if (req.user.role === 'user') {
+      const selectedCoachId = await getUserSelectedCoachId(req.user._id);
+      if (!selectedCoachId || String(selectedCoachId) !== String(req.params.id)) {
+        const {
+          assertCoachMatchesClientGoal,
+        } = require('../utils/coachSpecialization');
+        const member = await User.findById(req.user._id).select('clientData').lean();
+        const match = assertCoachMatchesClientGoal(member, withCerts);
+        if (!match.ok) {
+          return res.status(match.status).json({
+            message: match.message,
+            code: match.code,
+          });
+        }
+      }
     }
 
     const summary = await getCoachRatingSummary(withCerts._id);
@@ -757,6 +866,23 @@ async function submitCoachApplication(req, res) {
       certificateFiles,
     } = req.body;
 
+    const {
+      validateSpecializationInput,
+      specializationToStorage,
+    } = require('../utils/coachSpecialization');
+    const specializationError = validateSpecializationInput(specialization);
+    if (specializationError) {
+      return res.status(400).json({ message: specializationError });
+    }
+    const specializationStored = specializationToStorage(specialization);
+
+    const { validateSomaliaRegion, matchSomaliaRegion } = require('../utils/fieldValidation');
+    const locationError = validateSomaliaRegion(location);
+    if (locationError) {
+      return res.status(400).json({ message: locationError });
+    }
+    const locationStored = matchSomaliaRegion(location);
+
     const { resolveCertificateFiles, requireCertificateFiles } = require('../utils/certificateUpload');
     let uploadedCertificates = [];
     try {
@@ -782,7 +908,7 @@ async function submitCoachApplication(req, res) {
 
     const parsedWorkingDays = parseWorkingDays(workingDays);
     const parsedAppointmentDays = parseWorkingDays(appointmentDays);
-    const specArray = parseSpecialization(specialization);
+    const specArray = specializationStored.specialties;
 
     // Legacy Profile sync is best-effort — current User model stores coach
     // details on coachData / CoachApplication instead.
@@ -804,7 +930,7 @@ async function submitCoachApplication(req, res) {
             $set: {
               age: Number(age),
               phone: String(phone).trim(),
-              location: String(location).trim(),
+              location: locationStored,
               yearsExperience: Number(yearsExperience),
               certifications: String(certifications).trim(),
               specialization: specArray,
@@ -831,6 +957,7 @@ async function submitCoachApplication(req, res) {
       req.user.coachData = {
         ...(req.user.coachData?.toObject?.() || req.user.coachData || {}),
         approval_status: 'pending',
+        primarySpecialization: specializationStored.primarySpecialization,
         specialties: specArray,
         certifications: String(certifications)
           .split(',')
@@ -839,7 +966,7 @@ async function submitCoachApplication(req, res) {
         certificateFiles: uploadedCertificates,
         bio: String(bio || '').trim(),
         experience: String(experience || '').trim(),
-        location: String(location).trim(),
+        location: locationStored,
         age: Number(age) || null,
         years_experience: Number(yearsExperience) || 0,
         appointmentDurationMinutes: availability.durationMinutes || 60,
@@ -859,11 +986,11 @@ async function submitCoachApplication(req, res) {
     const applicationData = {
       phone: String(phone).trim(),
       age: Number(age),
-      location: String(location).trim(),
+      location: locationStored,
       yearsExperience: Number(yearsExperience),
       certifications: String(certifications).trim(),
       certificateFiles: uploadedCertificates,
-      specialization: String(specialization).trim(),
+      specialization: specializationStored.label,
       bio: String(bio || '').trim(),
       experience: String(experience || '').trim(),
       message: String(message || '').trim(),

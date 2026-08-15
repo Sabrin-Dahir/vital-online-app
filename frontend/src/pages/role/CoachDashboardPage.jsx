@@ -97,6 +97,7 @@ export default function CoachDashboardPage() {
               <Link to="/coach/clients"><Button size="sm" variant="secondary">View clients</Button></Link>
               <Link to="/coach/appointments"><Button size="sm">Schedule appointment</Button></Link>
               <Link to="/coach/sessions"><Button size="sm" variant="secondary">1-on-1 Sessions</Button></Link>
+              <Link to="/coach/attendance"><Button size="sm" variant="secondary">Attendance</Button></Link>
             </div>
             <ul className="mt-4 space-y-2">
               {upcoming.length === 0 ? (

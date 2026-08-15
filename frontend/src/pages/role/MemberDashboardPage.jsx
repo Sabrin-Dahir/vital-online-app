@@ -158,6 +158,7 @@ export default function MemberDashboardPage() {
           <Link to="/member/coaches"><Button size="sm">Browse coaches</Button></Link>
           <Link to="/member/appointments"><Button size="sm" variant="secondary">My appointments</Button></Link>
           <Link to="/member/sessions"><Button size="sm" variant="secondary">1-on-1 Sessions</Button></Link>
+          <Link to="/member/attendance"><Button size="sm" variant="secondary">My Attendance</Button></Link>
           <Link to="/member/progress"><Button size="sm" variant="secondary">Log progress</Button></Link>
           <Link to="/member/share"><Button size="sm" variant="secondary">Share & invite</Button></Link>
           <Link to="/member/account"><Button size="sm" variant="secondary">My account</Button></Link>

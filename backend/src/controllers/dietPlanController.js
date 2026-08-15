@@ -121,6 +121,39 @@ function normalizeMeal(meal, fallbackType) {
   const reminderTime = isReminderMealType(type)
     ? normalizeReminderTime(meal?.reminderTime)
     : '';
+
+  const nutritionFields = [
+    ['calories', meal?.calories],
+    ['protein', meal?.protein],
+    ['carbs', meal?.carbs],
+    ['fats', meal?.fats ?? meal?.fat],
+  ];
+  for (const [label, raw] of nutritionFields) {
+    if (raw === undefined || raw === null || String(raw).trim() === '') continue;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) {
+      const err = new Error(`${label} must be a number`);
+      err.status = 400;
+      throw err;
+    }
+    if (parsed < 0) {
+      const err = new Error(`${label} cannot be negative`);
+      err.status = 400;
+      throw err;
+    }
+  }
+
+  const reminderRaw = String(meal?.reminderTime || '').trim();
+  if (
+    isReminderMealType(type)
+    && reminderRaw
+    && !normalizeReminderTime(reminderRaw)
+  ) {
+    const err = new Error('Meal time must be a valid time (HH:MM)');
+    err.status = 400;
+    throw err;
+  }
+
   return {
     type,
     name: meal?.name || '',
@@ -130,7 +163,7 @@ function normalizeMeal(meal, fallbackType) {
     calories: Math.max(0, Number(meal?.calories) || 0),
     protein: Math.max(0, Number(meal?.protein) || 0),
     carbs: Math.max(0, Number(meal?.carbs) || 0),
-    fats: Math.max(0, Number(meal?.fats) || 0),
+    fats: Math.max(0, Number(meal?.fats ?? meal?.fat) || 0),
     reminderTime,
     prepInstructions: String(meal?.prepInstructions || '').trim(),
     mealNotes: String(meal?.mealNotes || meal?.notes || '').trim(),
@@ -1155,6 +1188,17 @@ async function createOrUpdateDietPlan(req, res) {
       confirmSupersede,
     } = req.body;
 
+    const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+    let goalForAuth = goal;
+    if (!goalForAuth && planId) {
+      const existing = await DietPlan.findOne({ _id: planId, coach: req.user._id }).select('goal');
+      if (existing?.goal) goalForAuth = existing.goal;
+    }
+    if (!enforceCoachSpecialization(req, res, {
+      resourceType: 'diet_plan',
+      body: { ...req.body, goal: goalForAuth },
+    })) return;
+
     const caloriesCheck = validateDailyCalories(dailyCalories);
     if (caloriesCheck.error) {
       return res.status(400).json({ message: caloriesCheck.error });
@@ -1334,8 +1378,8 @@ async function createOrUpdateDietPlan(req, res) {
         requiresConfirmSupersede: true,
       });
     }
-    console.error('createOrUpdateDietPlan:', error.message);
-    return res.status(500).json({ message: 'Error saving diet plan' });
+    const { respondWithCaughtError } = require('../utils/httpErrors');
+    return respondWithCaughtError(res, error, 'Error saving diet plan');
   }
 }
 
@@ -1343,6 +1387,12 @@ async function updateDietPlanById(req, res) {
   try {
     const plan = await DietPlan.findOne({ _id: req.params.id, coach: req.user._id });
     if (!plan) return res.status(404).json({ message: 'Diet plan not found' });
+
+    const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+    if (!enforceCoachSpecialization(req, res, {
+      resourceType: 'diet_plan',
+      body: { ...req.body, goal: req.body.goal || plan.goal },
+    })) return;
 
     const previousStatus = plan.status;
     const {

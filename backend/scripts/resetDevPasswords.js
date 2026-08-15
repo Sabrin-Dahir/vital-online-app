@@ -1,7 +1,7 @@
 /**
  * Resets every account password to a predictable local-dev value:
  *   first letter of email local-part uppercased + rest + "111"
- * Example: yasmiin@gmail.com → Yasmiin111
+ * Example: local-part of the username, first letter uppercased, plus 111
  *
  * Usage: node scripts/resetDevPasswords.js
  */

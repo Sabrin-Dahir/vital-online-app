@@ -12,6 +12,12 @@ import ProfileDetails from "../../components/ProfileDetails";
 import { Badge, Button, Card, Modal } from "../../components/ui";
 import { coachDisplayName, coachProfileFromUser } from "../../utils/coachDisplay";
 import { isSelectableCoach } from "../../utils/coachVisibility";
+import {
+  coachMatchesFitnessGoal,
+  fitnessGoalLabel,
+  normalizeFitnessGoal,
+} from "../../utils/coachSpecialization";
+import { useAuth } from "../../auth/AuthContext";
 
 function specializationLabel(coach) {
   const profile = coachProfileFromUser(coach);
@@ -20,6 +26,7 @@ function specializationLabel(coach) {
 }
 
 export default function MemberCoachesPage() {
+  const { user } = useAuth();
   const [coaches, setCoaches] = useState([]);
   const [coaching, setCoaching] = useState(null);
   const [request, setRequest] = useState(null);
@@ -28,6 +35,8 @@ export default function MemberCoachesPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [detailCoach, setDetailCoach] = useState(null);
+
+  const fitnessGoal = normalizeFitnessGoal(user?.clientData?.fitness_goal);
 
   const load = useCallback(async ({ silent = false } = {}) => {
     if (!silent) {
@@ -40,7 +49,11 @@ export default function MemberCoachesPage() {
         getMemberCoaching().catch(() => null),
         getMyCoachRequest().catch(() => null),
       ]);
-      setCoaches((Array.isArray(trainers) ? trainers : []).filter(isSelectableCoach));
+      setCoaches(
+        (Array.isArray(trainers) ? trainers : [])
+          .filter(isSelectableCoach)
+          .filter((coach) => !fitnessGoal || coachMatchesFitnessGoal(coach, fitnessGoal)),
+      );
       setCoaching(assignment || null);
       setRequest(myRequest || null);
     } catch (err) {
@@ -48,7 +61,7 @@ export default function MemberCoachesPage() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, []);
+  }, [fitnessGoal]);
 
   useEffect(() => {
     load();
@@ -78,6 +91,15 @@ export default function MemberCoachesPage() {
     setError("");
     setNotice("");
     try {
+      if (!fitnessGoal) {
+        setError("Set your fitness goal before requesting a coach.");
+        return;
+      }
+      const coach = coaches.find((c) => String(c._id) === String(coachId));
+      if (coach && !coachMatchesFitnessGoal(coach, fitnessGoal)) {
+        setError("Request rejected: Coach specialization does not match the client's fitness goal.");
+        return;
+      }
       const created = await submitCoachRequest(coachId);
       setRequest(created || { status: "pending", coach: coaches.find((c) => c._id === coachId) });
       setNotice("Request sent. Status: Pending Coach Approval.");
@@ -113,6 +135,15 @@ export default function MemberCoachesPage() {
         <p className="mt-2 text-sm text-[var(--vf-muted)]">
           Browse active coaches and send a request to the coach you want. You are linked only after they accept.
         </p>
+        {fitnessGoal ? (
+          <p className="mt-3 text-sm font-medium text-[var(--vf-text)]">
+            Showing coaches for your fitness goal: {fitnessGoalLabel(fitnessGoal)}
+          </p>
+        ) : (
+          <p className="mt-3 text-sm text-amber-700">
+            Set your fitness goal in your profile to see matching coaches.
+          </p>
+        )}
       </Card>
 
       

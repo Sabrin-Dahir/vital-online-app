@@ -62,21 +62,22 @@ class Profile {
       case 'gain_muscle':
         return 'Muscle Building';
       case 'maintain':
-        return 'Maintain';
       case 'other':
-        return 'General';
+        return 'General Fitness';
       default:
-        return fitnessGoal?.replaceAll('_', ' ') ?? '';
+        return fitnessGoal?.trim() ?? '';
     }
   }
 
   static String? _fitnessGoalFromLabel(String? label) {
-    final value = (label ?? '').trim().toLowerCase();
+    final value = (label ?? '').trim();
     if (value.isEmpty) return null;
-    if (value.contains('weight') || value == 'lose_weight') return 'lose_weight';
-    if (value.contains('muscle') || value == 'gain_muscle') return 'gain_muscle';
-    if (value.contains('maintain')) return 'maintain';
-    return 'other';
+    // Prefer canonical specialization labels; keep legacy reverse mapping.
+    final lower = value.toLowerCase();
+    if (lower == 'lose_weight' || lower.contains('weight loss')) return 'Weight Loss';
+    if (lower == 'gain_muscle' || lower.contains('muscle')) return 'Muscle Building';
+    if (lower.contains('maintain') || lower == 'other') return 'General Fitness';
+    return value;
   }
 
   factory Profile.fromJson(Map<String, dynamic>? json) {

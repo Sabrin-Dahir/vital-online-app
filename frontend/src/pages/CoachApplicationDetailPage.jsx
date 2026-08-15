@@ -215,7 +215,7 @@ export default function CoachApplicationDetailPage() {
           <h3 className="font-bold text-[var(--vf-text)]">Contact</h3>
           <div className="mt-4 grid gap-4 sm:grid-cols-3">
             <InfoRow label="Phone" value={profile.phone || app.phone} />
-            <InfoRow label="Location" value={profile.location || app.location} />
+            <InfoRow label="Region / Gobol" value={profile.location || app.location} />
             <InfoRow label="Age" value={profile.age ?? app.age} />
           </div>
         </Card>

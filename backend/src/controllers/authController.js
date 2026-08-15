@@ -288,102 +288,15 @@ async function register(req, res) {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-    const {
-      username,
-      password,
-      full_name,
-      phone = '',
-      age,
-      gender,
-      height,
-      weight,
-      fitness_goal,
-      activity_level,
-      invite_code,
-      ref,
-    } = req.body;
-    const normalizedUsername = String(username).trim().toLowerCase();
-    const exists = await User.exists({ username: normalizedUsername });
-    if (exists) return res.status(409).json({ message: 'Username already exists' });
 
-    const InviteCode = require('../models/InviteCode');
-    const Notification = require('../models/Notification');
-    const rawInvite = String(invite_code || ref || '').trim().toUpperCase();
-    let inviterId = null;
-    let inviteDoc = null;
-    if (rawInvite) {
-      inviteDoc = await InviteCode.findOne({ code: rawInvite });
-      if (!inviteDoc) {
-        return res.status(400).json({ message: 'Invalid invite code' });
-      }
-      if (inviteDoc.max_uses != null && inviteDoc.uses >= inviteDoc.max_uses) {
-        return res.status(400).json({ message: 'This invite code has reached its limit' });
-      }
-      inviterId = inviteDoc.owner_id;
-    }
-
-    // Persist only fields the member submitted — no invented profile defaults.
-    const clientData = { assigned_coach_id: null };
-    if (age !== undefined && age !== null && String(age).trim() !== '') {
-      const parsedAge = Number(age);
-      if (!Number.isNaN(parsedAge)) clientData.age = parsedAge;
-    }
-    if (gender === 'Female' || gender === 'Male') {
-      clientData.gender = gender;
-    } else if (typeof gender === 'string' && gender.trim()) {
-      clientData.gender = gender.trim();
-    }
-    if (height !== undefined && height !== null && String(height).trim() !== '') {
-      const parsedHeight = Number(height);
-      if (!Number.isNaN(parsedHeight)) clientData.height = parsedHeight;
-    }
-    if (weight !== undefined && weight !== null && String(weight).trim() !== '') {
-      const parsedWeight = Number(weight);
-      if (!Number.isNaN(parsedWeight)) clientData.weight = parsedWeight;
-    }
-    if (['lose_weight', 'gain_muscle', 'maintain', 'other'].includes(fitness_goal)) {
-      clientData.fitness_goal = fitness_goal;
-    }
-    if (['sedentary', 'moderate', 'active'].includes(activity_level)) {
-      clientData.activity_level = activity_level;
-    }
-
-    // Role is always member for public registration — ignore any client-supplied role.
-    if (req.body?.role != null && String(req.body.role).trim() !== '' && String(req.body.role).trim() !== 'user') {
-      return res.status(400).json({
-        message: 'Public registration only creates member accounts.',
-        code: 'ROLE_NOT_ALLOWED',
-      });
-    }
-
-    const user = await User.create({
-      username: normalizedUsername,
-      password,
-      full_name: String(full_name).trim(),
-      phone: String(phone || '').trim(),
-      role: 'user',
-      status: 'active',
-      must_change_password: false,
-      invited_by: inviterId,
-      clientData,
-    });
-
-    if (inviteDoc) {
-      inviteDoc.uses = (inviteDoc.uses || 0) + 1;
-      await inviteDoc.save();
-      try {
-        const friendName = user.full_name?.split(/\s+/)[0] || user.username;
-        await Notification.create({
-          user: inviteDoc.owner_id,
-          recipient_id: inviteDoc.owner_id,
-          type: 'update',
-          message: `${friendName} joined Vital Fitness using your invite. Nice work spreading the momentum!`,
-          data: { invited_user_id: String(user._id) },
-          read: false,
-        });
-      } catch (notifyError) {
-        console.error('[AUTH] Invite notification:', notifyError.message);
-      }
+    const { createMemberRegistration, mapMemberRegistrationError } = require('../utils/createMemberRegistration');
+    let user;
+    try {
+      ({ user } = await createMemberRegistration(req.body, { initiatedByAdmin: false }));
+    } catch (regError) {
+      const mapped = mapMemberRegistrationError(regError, res);
+      if (mapped) return mapped;
+      throw regError;
     }
 
     const token = createToken(user);
@@ -410,179 +323,8 @@ async function register(req, res) {
 
 async function registerCoach(req, res) {
   try {
-    const CoachApplication = require('../models/CoachApplication');
-    const Profile = require('../models/Profile');
-    const { parseWorkingDays, validateWorkingDays } = require('../utils/workingDays');
-    const { normalizeDayAvailability } = require('../utils/appointmentSlots');
-    const { buildCoachDataFromApplication } = require('../utils/coachProfile');
-
-    const {
-      name,
-      full_name,
-      email,
-      username,
-      password,
-      phone,
-      age,
-      location,
-      yearsExperience,
-      certifications,
-      specialization,
-      bio,
-      experience,
-      message,
-      workingDays,
-      appointmentDays,
-      dayAvailability,
-      appointmentDurationMinutes,
-      certificateFiles,
-    } = req.body;
-
-    const identity = String(username || email || '')
-      .trim()
-      .toLowerCase();
-    const fullName = String(name || full_name || '').trim();
-
-    if (!identity) {
-      return res.status(400).json({ message: 'Email / username is required' });
-    }
-    if (!fullName) {
-      return res.status(400).json({ message: 'Full name is required' });
-    }
-    if (!password || String(password).length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters' });
-    }
-
-    const requiredFields = [
-      ['phone', phone],
-      ['age', age],
-      ['location', location],
-      ['yearsExperience', yearsExperience],
-      ['certifications', certifications],
-      ['specialization', specialization],
-    ];
-    // bio, experience, and message are optional and may be any length.
-    for (const [field, value] of requiredFields) {
-      if (value === undefined || value === null || String(value).trim() === '') {
-        return res.status(400).json({ message: `${field} is required` });
-      }
-    }
-
-    const { resolveCertificateFiles, requireCertificateFiles } = require('../utils/certificateUpload');
-    let uploadedCertificates = [];
-    try {
-      requireCertificateFiles(certificateFiles);
-      // Identity may be an email (no User ObjectId yet). certificateUpload only
-      // runs ownership lookups when userId is a valid ObjectId.
-      uploadedCertificates = await resolveCertificateFiles(certificateFiles, {
-        userId: identity,
-        expectedName: fullName,
-      });
-    } catch (certError) {
-      return res.status(400).json({ message: certError.message, code: certError.code });
-    }
-
-    const workingDaysError = validateWorkingDays(workingDays);
-    if (workingDaysError) {
-      return res.status(400).json({ message: workingDaysError });
-    }
-    const appointmentDaysError = validateWorkingDays(appointmentDays);
-    if (appointmentDaysError) {
-      return res.status(400).json({
-        message: appointmentDaysError.replace('working day', 'appointment day'),
-      });
-    }
-
-    const availability = normalizeDayAvailability(
-      appointmentDays,
-      dayAvailability,
-      appointmentDurationMinutes,
-    );
-    if (availability.error) {
-      return res.status(400).json({ message: availability.error });
-    }
-
-    const exists = await User.exists({ username: identity });
-    if (exists) {
-      return res.status(409).json({ message: 'Username already exists' });
-    }
-
-    const parsedWorkingDays = parseWorkingDays(workingDays) || [];
-    const parsedAppointmentDays = parseWorkingDays(appointmentDays) || [];
-    const duration = Number(appointmentDurationMinutes) || 60;
-    const daySlots = availability.value || [];
-
-    const profileData = {
-      age: Number(age) || null,
-      phone: String(phone).trim(),
-      location: String(location).trim(),
-      yearsExperience: Number(yearsExperience) || 0,
-      certifications: String(certifications).trim(),
-      specialization: String(specialization).split(',').map((s) => s.trim()).filter(Boolean),
-      bio: String(bio || '').trim(),
-      experience: String(experience || '').trim(),
-      workingDays: parsedWorkingDays,
-      appointmentDays: parsedAppointmentDays,
-      appointmentDurationMinutes: duration,
-      dayAvailability: daySlots,
-    };
-    const profile = await Profile.create(profileData);
-
-    const coachData = buildCoachDataFromApplication({
-      approval_status: 'pending',
-      phone: String(phone).trim(),
-      age: Number(age),
-      location: String(location).trim(),
-      yearsExperience: Number(yearsExperience),
-      certifications: String(certifications).trim(),
-      specialization: String(specialization).trim(),
-      bio: String(bio || '').trim(),
-      experience: String(experience || '').trim(),
-      workingDays: parsedWorkingDays,
-      appointmentDays: parsedAppointmentDays,
-      dayAvailability: daySlots,
-      appointmentDurationMinutes: duration,
-      workingHoursStart: daySlots[0]?.start || '09:00',
-      workingHoursEnd: daySlots[0]?.end || '17:00',
-      certificateFiles: uploadedCertificates,
-    });
-
-    // Applicants start as members with a pending coach application.
-    // Admins approve via /admin/coach-applications (same flow as web).
-    const user = await User.create({
-      username: identity,
-      password,
-      admin_password: password,
-      full_name: fullName,
-      phone: String(phone).trim(),
-      role: 'user',
-      status: 'active',
-      must_change_password: false,
-      profile: profile._id,
-      clientData: {
-        age: Number(age) || null,
-      },
-      coachData,
-    });
-
-    await CoachApplication.create({
-      user: user._id,
-      phone: String(phone).trim(),
-      age: Number(age),
-      location: String(location).trim(),
-      yearsExperience: Number(yearsExperience),
-      certifications: String(certifications).trim(),
-      certificateFiles: uploadedCertificates,
-      specialization: String(specialization).trim(),
-      bio: String(bio || '').trim(),
-      experience: String(experience || '').trim(),
-      message: String(message || '').trim(),
-      workingDays: parsedWorkingDays,
-      appointmentDays: parsedAppointmentDays,
-      dayAvailability: daySlots,
-      appointmentDurationMinutes: duration,
-      status: 'pending',
-    });
+    const { createCoachRegistration, mapCoachRegistrationError } = require('../utils/createCoachRegistration');
+    const { user } = await createCoachRegistration(req.body, { initiatedByAdmin: false });
 
     const token = createToken(user);
     const serialized = await attachCoachApplicationStatus(serializeUser(user), user._id);
@@ -600,25 +342,9 @@ async function registerCoach(req, res) {
       user: serialized,
     });
   } catch (error) {
-    if (error?.code === 11000) {
-      return res.status(409).json({ message: 'Username already exists' });
-    }
+    const mapped = require('../utils/createCoachRegistration').mapCoachRegistrationError(error, res);
+    if (mapped) return mapped;
     console.error('[AUTH] registerCoach error:', error.message);
-    if (error.code === 'IMAGEKIT_NOT_CONFIGURED') {
-      return res.status(503).json({ message: error.message, code: error.code });
-    }
-    if ([
-      'INVALID_CERTIFICATES',
-      'TOO_MANY_CERTIFICATES',
-      'CERTIFICATE_TOO_LARGE',
-      'CERTIFICATES_REQUIRED',
-      'INVALID_FILE',
-      'CERTIFICATE_NAME_REQUIRED',
-      'CERTIFICATE_NAME_MISMATCH',
-      'CERTIFICATE_OCR_FAILED',
-    ].includes(error.code)) {
-      return res.status(400).json({ message: error.message, code: error.code });
-    }
     return res.status(500).json({ message: 'Unable to submit coach application right now' });
   }
 }
@@ -734,8 +460,10 @@ async function forgotPassword(req, res) {
     const genericMessage =
       'If an account exists for that email, a reset code has been sent.';
 
-    if (!email || !email.includes('@')) {
-      return res.status(400).json({ message: 'Please enter a valid email address' });
+    const { validateEmail } = require('../utils/fieldValidation');
+    const emailError = validateEmail(email);
+    if (emailError) {
+      return res.status(400).json({ message: emailError });
     }
 
     const user = await User.findOne({ username: email, role: { $ne: 'admin' } });

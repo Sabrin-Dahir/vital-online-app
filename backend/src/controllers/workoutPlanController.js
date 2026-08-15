@@ -9,6 +9,8 @@ const { hasActiveAssignment } = require('../utils/coachVisibility');
 const { USER_DISPLAY_SELECT } = require('../utils/userDisplay');
 const { normalizeMediaUrl } = require('../utils/normalizeMediaUrl');
 const { DAY_NAMES } = require('../utils/weeklyPlanUtils');
+const { validateExercises, validateObjectId, validateDate } = require('../utils/fieldValidation');
+const { rejectIfInvalid } = require('../middleware/validateRequest');
 
 function normalizeLevel(level) {
   const map = { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' };
@@ -98,10 +100,17 @@ async function createExercisePlan(req, res) {
     dueDate,
   } = req.body;
   try {
+    const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+    if (!enforceCoachSpecialization(req, res, { resourceType: 'exercise_plan' })) return;
+
+    if (rejectIfInvalid(res, validateExercises(exercises))) return;
     const normalizedExercises = normalizeExercises(exercises);
     if (!normalizedExercises.length) {
       return res.status(400).json({ message: 'At least one exercise is required' });
     }
+    if (clientId && rejectIfInvalid(res, validateObjectId(clientId, 'Client'))) return;
+    if (fitnessClassId && rejectIfInvalid(res, validateObjectId(fitnessClassId, 'Group'))) return;
+    if (dueDate && rejectIfInvalid(res, validateDate(dueDate, 'Due date', { required: false }))) return;
 
     const parsedDueDate = dueDate ? new Date(dueDate) : undefined;
     const baseFields = {
@@ -133,6 +142,23 @@ async function createExercisePlan(req, res) {
       const studentIds = (fitnessClass.enrolledStudents || []).map((s) => s._id || s);
       await createCompletionRecords(plan, studentIds, parsedDueDate);
 
+      try {
+        const { ensureWorkoutAttendance } = require('../utils/attendanceService');
+        await Promise.all(
+          studentIds.map((uid) =>
+            ensureWorkoutAttendance({
+              coachId: req.user._id,
+              userId: uid,
+              exercisePlanId: plan._id,
+              date: parsedDueDate || new Date(),
+              scheduledStart: parsedDueDate || new Date(),
+            }),
+          ),
+        );
+      } catch (attErr) {
+        console.warn('exercisePlan attendance:', attErr.message);
+      }
+
       const planTitle = plan.title || fitnessClass.title;
       await notifyUsers(
         studentIds,
@@ -158,6 +184,19 @@ async function createExercisePlan(req, res) {
     });
 
     await createCompletionRecords(plan, [clientId], parsedDueDate);
+
+    try {
+      const { ensureWorkoutAttendance } = require('../utils/attendanceService');
+      await ensureWorkoutAttendance({
+        coachId: req.user._id,
+        userId: clientId,
+        exercisePlanId: plan._id,
+        date: parsedDueDate || new Date(),
+        scheduledStart: parsedDueDate || new Date(),
+      });
+    } catch (attErr) {
+      console.warn('exercisePlan attendance:', attErr.message);
+    }
 
     await notifyUsers(
       [clientId],
@@ -246,6 +285,9 @@ async function getExercisePlanById(req, res) {
 
 async function updateExercisePlan(req, res) {
   try {
+    const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+    if (!enforceCoachSpecialization(req, res, { resourceType: 'exercise_plan' })) return;
+
     const plan = await ExercisePlan.findOne({
       _id: req.params.planId,
       coach: req.user._id,

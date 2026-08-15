@@ -122,6 +122,9 @@ async function ensureUserCompletions(userId, schedules) {
 
 async function createWorkoutSchedule(req, res) {
   try {
+    const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+    if (!enforceCoachSpecialization(req, res, { resourceType: 'workout_schedule' })) return;
+
     const {
       workoutTemplateId,
       clientId,
@@ -202,6 +205,24 @@ async function createWorkoutSchedule(req, res) {
 
     const userIds = await getScheduleTargetUserIds(populated);
     await createCompletionRecords(schedule, userIds);
+
+    try {
+      const { ensureWorkoutAttendance } = require('../utils/attendanceService');
+      await Promise.all(
+        userIds.map((uid) =>
+          ensureWorkoutAttendance({
+            coachId: req.user._id,
+            userId: uid,
+            workoutScheduleId: schedule._id,
+            date: schedule.startDateTime,
+            scheduledStart: schedule.startDateTime,
+            scheduledEnd: schedule.endDateTime,
+          }),
+        ),
+      );
+    } catch (attErr) {
+      console.warn('workoutSchedule attendance:', attErr.message);
+    }
 
     const workoutTitle = template.title;
     await notifyUsers(
@@ -323,6 +344,9 @@ async function getWorkoutScheduleById(req, res) {
 
 async function updateWorkoutSchedule(req, res) {
   try {
+    const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+    if (!enforceCoachSpecialization(req, res, { resourceType: 'workout_schedule' })) return;
+
     const schedule = await WorkoutSchedule.findOne({
       _id: req.params.id,
       coach: req.user._id,

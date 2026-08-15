@@ -24,10 +24,10 @@ const workoutScheduleSchema = new mongoose.Schema({
   fitnessClass: { type: mongoose.Schema.Types.ObjectId, ref: 'FitnessClass' },
   startDateTime: { type: Date, required: true },
   endDateTime: { type: Date, required: true },
-  durationMinutes: { type: Number, required: true },
-  notes: { type: String, default: '' },
+  durationMinutes: { type: Number, required: true, min: 5, max: 480 },
+  notes: { type: String, default: '', maxlength: 5000 },
   reminderEnabled: { type: Boolean, default: true },
-  reminderMinutesBefore: { type: Number, default: 30 },
+  reminderMinutesBefore: { type: Number, default: 30, min: 0, max: 24 * 60 },
   reminderSent: { type: Boolean, default: false },
   status: {
     type: String,
@@ -36,9 +36,12 @@ const workoutScheduleSchema = new mongoose.Schema({
   },
 }, { timestamps: true, optimisticConcurrency: true });
 
-workoutScheduleSchema.pre('validate', function requireTarget() {
+workoutScheduleSchema.pre('validate', function requireTargetAndOrder() {
   if (!this.client && !this.fitnessClass) {
     this.invalidate('client', 'Either client or fitnessClass is required');
+  }
+  if (this.startDateTime && this.endDateTime && this.endDateTime <= this.startDateTime) {
+    this.invalidate('endDateTime', 'End time must be after start time');
   }
 });
 

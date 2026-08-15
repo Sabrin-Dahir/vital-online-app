@@ -1,5 +1,7 @@
 const WorkoutTemplate = require('../models/WorkoutTemplate');
 const { normalizeMediaUrl } = require('../utils/normalizeMediaUrl');
+const { validateExercises, requireText } = require('../utils/fieldValidation');
+const { rejectIfInvalid } = require('../middleware/validateRequest');
 
 const WORKOUT_PRESETS = [
   'Yoga',
@@ -57,9 +59,13 @@ function serializeTemplate(doc) {
 
 async function createWorkoutTemplate(req, res) {
   try {
+    const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+    if (!enforceCoachSpecialization(req, res, { resourceType: 'workout_template' })) return;
+
     const { title, description, level, notes, exercises } = req.body;
+    if (rejectIfInvalid(res, requireText(title, 'Workout title', { min: 2, max: 120 }))) return;
+    if (rejectIfInvalid(res, validateExercises(exercises))) return;
     const normalized = normalizeExercises(exercises);
-    if (!title?.trim()) return res.status(400).json({ message: 'Workout title is required' });
     if (!normalized.length) return res.status(400).json({ message: 'At least one exercise is required' });
 
     const template = await WorkoutTemplate.create({
@@ -74,6 +80,10 @@ async function createWorkoutTemplate(req, res) {
     return res.status(201).json(serializeTemplate(template));
   } catch (error) {
     console.error('createWorkoutTemplate:', error.message);
+    if (error?.name === 'ValidationError') {
+      const first = Object.values(error.errors || {})[0];
+      return res.status(400).json({ message: first?.message || 'Invalid workout template' });
+    }
     return res.status(500).json({ message: 'Error creating workout template' });
   }
 }
@@ -105,6 +115,9 @@ async function getWorkoutTemplateById(req, res) {
 
 async function updateWorkoutTemplate(req, res) {
   try {
+    const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+    if (!enforceCoachSpecialization(req, res, { resourceType: 'workout_template' })) return;
+
     const template = await WorkoutTemplate.findOne({
       _id: req.params.id,
       coach: req.user._id,

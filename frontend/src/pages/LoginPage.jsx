@@ -13,6 +13,7 @@ import {
   Eye,
   EyeOff } from "lucide-react";
 import { dashboardPath } from "../App";
+import { validateLogin, validateEmail, firstFieldError } from "../utils/fieldValidation";
 
 export default function LoginPage() {
   const { user, login, loading } = useAuth();
@@ -22,6 +23,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
 
@@ -34,6 +36,13 @@ export default function LoginPage() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    const nextFieldErrors = validateLogin({ username, password });
+    setFieldErrors(nextFieldErrors);
+    const localError = firstFieldError(nextFieldErrors);
+    if (localError) {
+      setError(localError);
+      return;
+    }
     setSubmitting(true);
     setError("");
     setIsLocked(false);
@@ -110,11 +119,21 @@ export default function LoginPage() {
                     required
                     autoComplete="username"
                     value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setUsername(value);
+                      setFieldErrors((current) => ({
+                        ...current,
+                        username: value.trim() ? validateEmail(value) : "",
+                      }));
+                    }}
                     className="vf-login-input w-full rounded-xl border border-[var(--vf-border)] bg-[var(--vf-surface-muted)] py-2.5 pl-9 pr-3 text-sm text-[var(--vf-text)] outline-none placeholder:text-[var(--vf-muted)]/65"
-                    placeholder="admin@gmail.com"
+                    aria-invalid={Boolean(fieldErrors.username)}
                   />
                 </div>
+                {fieldErrors.username ? (
+                  <p className="mt-1 text-[11px] text-rose-600">{fieldErrors.username}</p>
+                ) : null}
               </label>
 
               <label
@@ -130,9 +149,13 @@ export default function LoginPage() {
                     required
                     autoComplete="current-password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setFieldErrors((current) => ({ ...current, password: "" }));
+                    }}
                     className="vf-login-input w-full rounded-xl border border-[var(--vf-border)] bg-[var(--vf-surface-muted)] py-2.5 pl-9 pr-10 text-sm text-[var(--vf-text)] outline-none placeholder:text-[var(--vf-muted)]/65"
                     placeholder="Password"
+                    aria-invalid={Boolean(fieldErrors.password)}
                   />
                   <button
                     type="button"
@@ -147,6 +170,9 @@ export default function LoginPage() {
                     )}
                   </button>
                 </div>
+                {fieldErrors.password ? (
+                  <p className="mt-1 text-[11px] text-rose-600">{fieldErrors.password}</p>
+                ) : null}
               </label>
 
               {error && (

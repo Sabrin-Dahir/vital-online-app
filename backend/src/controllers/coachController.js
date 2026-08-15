@@ -238,6 +238,9 @@ async function getClientDetail(req, res) {
 
 
 async function createFeedback(req, res) {
+  const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+  if (!enforceCoachSpecialization(req, res, { resourceType: 'feedback' })) return;
+
   const assignment = await CoachAssignment.findOne({
     _id: req.body.assignmentId,
     coach: req.user._id,
@@ -263,7 +266,22 @@ async function createFeedback(req, res) {
 }
 
 async function updateClientPlan(req, res) {
+  const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
   const { assignmentId, customDietPlan, customWorkoutPlan } = req.body;
+
+  if (customDietPlan) {
+    if (!enforceCoachSpecialization(req, res, {
+      resourceType: 'diet_plan',
+      body: { goal: customDietPlan.goal || 'maintenance' },
+    })) return;
+  }
+  if (customWorkoutPlan) {
+    if (!enforceCoachSpecialization(req, res, { resourceType: 'exercise_plan' })) return;
+  }
+  if (!customDietPlan && !customWorkoutPlan) {
+    if (!enforceCoachSpecialization(req, res, { resourceType: 'client_plan' })) return;
+  }
+
   const assignment = await CoachAssignment.findOne({
     _id: assignmentId,
     coach: req.user._id,
@@ -282,6 +300,9 @@ async function updateClientPlan(req, res) {
 }
 
 async function assignArticle(req, res) {
+  const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+  if (!enforceCoachSpecialization(req, res, { resourceType: 'article' })) return;
+
   const { assignmentId, articleId } = req.body;
   const assignment = await CoachAssignment.findOne({
     _id: assignmentId,
@@ -849,6 +870,9 @@ async function getClassDetail(req, res) {
 
 async function createClass(req, res) {
   try {
+    const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+    if (!enforceCoachSpecialization(req, res, { resourceType: 'class' })) return;
+
     const { title, description, category, date, durationMinutes, capacity } = req.body;
     if (!title || !date) {
       return res.status(400).json({ message: 'Title and date are required' });
@@ -882,6 +906,9 @@ async function createClass(req, res) {
 
 async function updateClass(req, res) {
   try {
+    const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+    if (!enforceCoachSpecialization(req, res, { resourceType: 'class' })) return;
+
     const fitnessClass = await FitnessClass.findOne({
       _id: req.params.id,
       coach: req.user._id,
@@ -951,6 +978,19 @@ async function enrollStudent(req, res) {
 
     fitnessClass.enrolledStudents.push(studentId);
     await fitnessClass.save();
+
+    try {
+      const { ensureGroupAttendance } = require('../utils/attendanceService');
+      await ensureGroupAttendance({
+        coachId: req.user._id,
+        userId: studentId,
+        fitnessClassId: fitnessClass._id,
+        scheduledStart: fitnessClass.date,
+        durationMinutes: fitnessClass.durationMinutes,
+      });
+    } catch (attErr) {
+      console.warn('enroll attendance:', attErr.message);
+    }
 
     await backfillGroupPlanAccess(studentId, fitnessClass._id).catch((err) => {
       console.error('backfillGroupPlanAccess enrollStudent:', err.message);
@@ -1092,6 +1132,13 @@ async function changeClientGroup(req, res) {
 async function markAttendance(req, res) {
   try {
     const { studentId, present } = req.body;
+    const { validateObjectId } = require('../utils/fieldValidation');
+    const studentError = validateObjectId(studentId, 'User');
+    if (studentError) return res.status(400).json({ message: studentError });
+    if (present !== undefined && typeof present !== 'boolean') {
+      return res.status(400).json({ message: 'Attendance status must be true or false' });
+    }
+
     const fitnessClass = await FitnessClass.findOne({
       _id: req.params.id,
       coach: req.user._id,
@@ -1121,10 +1168,37 @@ async function markAttendance(req, res) {
     }
 
     await fitnessClass.save();
+
+    try {
+      const {
+        ensureGroupAttendance,
+        markAttendanceRecord,
+      } = require('../utils/attendanceService');
+      const record = await ensureGroupAttendance({
+        coachId: req.user._id,
+        userId: studentId,
+        fitnessClassId: fitnessClass._id,
+        scheduledStart: fitnessClass.date,
+        durationMinutes: fitnessClass.durationMinutes,
+      });
+      if (record) {
+        await markAttendanceRecord(record, {
+          status: present === false ? 'absent' : 'present',
+          markedBy: req.user._id,
+        });
+      }
+    } catch (syncError) {
+      console.warn('markAttendance sync:', syncError.message);
+    }
+
     const populated = await FitnessClass.findById(fitnessClass._id)
       .populate('enrolledStudents', USER_DISPLAY_SELECT);
     return res.json(formatFitnessClass(populated));
   } catch (error) {
+    if (error?.name === 'ValidationError') {
+      const first = Object.values(error.errors || {})[0];
+      return res.status(400).json({ message: first?.message || 'Invalid attendance data' });
+    }
     return res.status(500).json({ message: 'Error marking attendance' });
   }
 }

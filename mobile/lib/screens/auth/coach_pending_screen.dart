@@ -303,7 +303,7 @@ class _CoachPendingScreenState extends State<CoachPendingScreen> {
           _profileRow('Name', _currentUser.name),
           _profileRow('Email', _currentUser.email),
           _profileRow('Phone', profile?.phone),
-          _profileRow('Location', profile?.location),
+          _profileRow('Region / Gobol', profile?.location),
           _profileRow('Age', profile?.age?.toString()),
           _profileRow('Years experience', profile?.yearsExperience?.toString()),
           _profileRow('Specialization', _joinList(profile?.specialization ?? const [])),

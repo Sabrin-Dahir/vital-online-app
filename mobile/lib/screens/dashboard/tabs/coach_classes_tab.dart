@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../services/api_service.dart';
 import '../../../utils/async_load.dart';
+import '../../../utils/coach_specialization.dart';
 import '../../../widgets/scrollable_body.dart';
 import '../../../widgets/tab_refresh.dart';
 import '../../../widgets/profile_avatar.dart';
@@ -73,14 +74,23 @@ class CoachClassesTabState extends State<CoachClassesTab> with SingleTickerProvi
     }
   }
 
-  void _showCreateClassModal() {
+  Future<void> _showCreateClassModal() async {
     final titleCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     final capacityCtrl = TextEditingController(text: '20');
     String category = 'General';
+    List<String> categories = allowedClassCategories(null);
     DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
     TimeOfDay selectedTime = const TimeOfDay(hour: 9, minute: 0);
     int duration = 60;
+
+    try {
+      final me = await _apiService.getMe();
+      categories = allowedClassCategories(coachSpecializationsFromUser(me));
+      category = categories.isNotEmpty ? categories.first : 'General Fitness';
+    } catch (_) {}
+
+    if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
@@ -118,9 +128,9 @@ class CoachClassesTabState extends State<CoachClassesTab> with SingleTickerProvi
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: category,
+                        value: categories.contains(category) ? category : categories.first,
                         decoration: const InputDecoration(labelText: 'Category', border: OutlineInputBorder()),
-                        items: ['General', 'Yoga', 'HIIT', 'Strength', 'Cardio', 'Flexibility']
+                        items: categories
                             .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                             .toList(),
                         onChanged: (v) => setModalState(() => category = v ?? category),

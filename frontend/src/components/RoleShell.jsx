@@ -11,6 +11,7 @@ import {
   Users,
   UserRound,
   X,
+  ClipboardCheck,
   Dumbbell } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
@@ -22,6 +23,7 @@ const MEMBER_NAV = [
   { to: "/member/coaches", label: "Coaches", icon: Users },
   { to: "/member/appointments", label: "Appointments", icon: CalendarDays },
   { to: "/member/sessions", label: "1-on-1 Sessions", icon: Dumbbell },
+  { to: "/member/attendance", label: "My Attendance", icon: ClipboardCheck },
   { to: "/member/account", label: "My account", icon: UserRound },
   { to: "/member/progress", label: "Log progress", icon: HeartPulse },
   { to: "/member/share", label: "Share & invite", icon: Share2 },
@@ -34,6 +36,7 @@ const COACH_NAV = [
   { to: "/coach/clients", label: "My clients", icon: Users },
   { to: "/coach/appointments", label: "Appointments", icon: CalendarDays },
   { to: "/coach/sessions", label: "1-on-1 Sessions", icon: Dumbbell },
+  { to: "/coach/attendance", label: "Attendance", icon: ClipboardCheck },
   { to: "/coach/account", label: "My account", icon: UserRound },
   { to: "/coach/notifications", label: "Notifications", icon: Bell },
   { to: "/coach/password", label: "Change password", icon: KeyRound },

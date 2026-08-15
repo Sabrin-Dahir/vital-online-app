@@ -7,6 +7,7 @@ import '../../../utils/async_load.dart';
 import '../../../widgets/scrollable_body.dart';
 import '../widgets/admin_management_widgets.dart';
 import '../screens/admin_member_detail_screen.dart';
+import '../../../screens/auth/coach_register_screen.dart';
 
 class AdminCoachesTab extends StatefulWidget {
   final User adminUser;
@@ -182,6 +183,26 @@ class AdminCoachesTabState extends State<AdminCoachesTab> {
         );
       }
     }
+  }
+
+  Future<void> _openRegisterCoach() async {
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const CoachRegisterScreen(adminCreating: true),
+      ),
+    );
+    if (result == null || !mounted) return;
+    await refresh();
+    if (!mounted) return;
+    final user = result['user'] is Map ? Map<String, dynamic>.from(result['user'] as Map) : result;
+    final name = ApiService.displayName(user);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result['message']?.toString() ?? '$name registered as a coach.'),
+        backgroundColor: CoachDashboardTheme.success,
+      ),
+    );
   }
 
   Future<void> _confirmDeleteCoach(String coachId, String name) async {
@@ -388,6 +409,15 @@ class AdminCoachesTabState extends State<AdminCoachesTab> {
           style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : CoachDashboardTheme.textSecondary),
         ),
         const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _openRegisterCoach,
+            icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+            label: const Text('Register coach'),
+          ),
+        ),
+        const SizedBox(height: 12),
         TextField(
           decoration: CoachDashboardTheme.searchDecoration(isDark: isDark, hint: 'Search by name or email...'),
           onChanged: (value) => setState(() {
@@ -440,9 +470,22 @@ class AdminCoachesTabState extends State<AdminCoachesTab> {
     final activeClients = (coach['activeClients'] as num?)?.toInt() ?? 0;
     final profile = coach['profile'] as Map<String, dynamic>? ?? {};
     final coachData = coach['coachData'] as Map<String, dynamic>? ?? {};
-    final specs = profile['specialization'] as List<dynamic>? ??
-        coachData['specialties'] as List<dynamic>? ??
-        [];
+    final specs = <String>[];
+    final fromCoachData = coachData['specialties'];
+    final fromProfile = profile['specialization'] ?? profile['specializations'];
+    if (fromCoachData is List && fromCoachData.isNotEmpty) {
+      specs.addAll(fromCoachData.map((s) => s.toString()).where((s) => s.trim().isNotEmpty));
+    } else if (fromProfile is List && fromProfile.isNotEmpty) {
+      specs.addAll(fromProfile.map((s) => s.toString()).where((s) => s.trim().isNotEmpty));
+    } else {
+      final primarySpec = (coach['primarySpecialization'] ??
+              profile['primarySpecialization'] ??
+              coachData['primarySpecialization'] ??
+              '')
+          .toString()
+          .trim();
+      if (primarySpec.isNotEmpty) specs.add(primarySpec);
+    }
     final years = profile['yearsExperience'] ?? coachData['years_experience'];
     final bio = (profile['bio'] ?? coachData['bio'] ?? '') as String;
 
@@ -471,6 +514,11 @@ class AdminCoachesTabState extends State<AdminCoachesTab> {
                       label: suspended ? 'Suspended' : 'Active',
                       color: suspended ? CoachDashboardTheme.danger : CoachDashboardTheme.success,
                     ),
+                    if (specs.isNotEmpty)
+                      AdminStatusBadge(
+                        label: specs.first,
+                        color: CoachDashboardTheme.primary,
+                      ),
                     _coachStatChip(isDark, Icons.people_outline, '$activeClients clients'),
                     if (years != null) _coachStatChip(isDark, Icons.timeline, '$years yrs exp'),
                   ],
@@ -480,7 +528,7 @@ class AdminCoachesTabState extends State<AdminCoachesTab> {
           ),
           children: [
             if (bio.isNotEmpty) _detailRow('Bio', bio),
-            if (specs.isNotEmpty) _detailRow('Specializations', specs.map((s) => s.toString()).join(', ')),
+            if (specs.isNotEmpty) _detailRow('Specializations', specs.join(', ')),
             if ((profile['certifications'] as String?)?.isNotEmpty == true)
               _detailRow('Certifications', profile['certifications']),
             _buildCertificateFilesSection(
@@ -491,7 +539,7 @@ class AdminCoachesTabState extends State<AdminCoachesTab> {
                 'user': {'coachData': coachData, 'profile': profile},
               }),
             ),
-            if ((profile['location'] as String?)?.isNotEmpty == true) _detailRow('Location', profile['location']),
+            if ((profile['location'] as String?)?.isNotEmpty == true) _detailRow('Region / Gobol', profile['location']),
             if ((profile['workingDays'] as List?)?.isNotEmpty == true)
               _detailRow('Working days', (profile['workingDays'] as List).map((d) => d.toString()).join(', ')),
             if (profile['phone'] != null) _detailRow('Phone', profile['phone'].toString()),
@@ -584,7 +632,7 @@ class AdminCoachesTabState extends State<AdminCoachesTab> {
             _detailSection(isDark, 'Contact', [
               _detailRow('Phone', app['phone']),
               _detailRow('Age', app['age']?.toString()),
-              _detailRow('Location', app['location']),
+              _detailRow('Region / Gobol', app['location']),
             ]),
             _detailSection(isDark, 'Professional', [
               _detailRow('Years of Experience', app['yearsExperience']?.toString()),

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
-import { deleteCoach, getCoachDetail } from "../api/adminApi";
+import { deleteCoach, getCoachDetail, updateCoachSpecialization } from "../api/adminApi";
 import { getErrorMessage } from "../api/client";
 import {
   Badge,
@@ -22,6 +22,7 @@ import {
   coachProfileFromUser,
   memberDisplayEmail,
   memberDisplayName } from "../utils/coachDisplay";
+import { SPECIALIZATIONS, getCoachSpecializations, validateSpecializationSelection, canToggleSpecialization } from "../utils/coachSpecialization";
 
 /** Coach profile for admins — view details and permanently delete accounts. */
 export default function CoachDetailPage() {
@@ -34,6 +35,8 @@ export default function CoachDetailPage() {
   const [redirectToUser, setRedirectToUser] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [specializationDraft, setSpecializationDraft] = useState([]);
+  const [savingSpec, setSavingSpec] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -47,6 +50,7 @@ export default function CoachDetailPage() {
         return;
       }
       setData(detail);
+      setSpecializationDraft(getCoachSpecializations(detail?.user));
     } catch (err) {
       if (err?.response?.data?.code === "ROLE_USER") {
         setRedirectToUser(true);
@@ -79,6 +83,25 @@ export default function CoachDetailPage() {
     }
   }
 
+  async function handleSaveSpecialization() {
+    if (!id || savingSpec) return;
+    const validationError = validateSpecializationSelection(specializationDraft);
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+    setSavingSpec(true);
+    try {
+      await updateCoachSpecialization(id, specializationDraft);
+      toast.success("Specializations updated");
+      await load();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setSavingSpec(false);
+    }
+  }
+
   
   if (redirectToUser) return <Navigate to={`/users/${id}`} replace />;
   if (loading) return null;
@@ -93,6 +116,8 @@ export default function CoachDetailPage() {
   const application = data.coachApplication;
   const coachName = coachDisplayName(coach);
   const coachEmail = coachDisplayEmail(coach);
+  const specializationList = getCoachSpecializations(coach);
+  const specialization = specializationList.length ? specializationList.join(", ") : "—";
 
   return (
     <div>
@@ -126,6 +151,7 @@ export default function CoachDetailPage() {
 
       <div className="mb-4 flex flex-wrap gap-2">
         <Badge tone="primary">coach</Badge>
+        <Badge tone="blue">{specialization}</Badge>
         <Badge tone={coach.status === "active" ? "green" : "amber"}>
           {coach.status}
         </Badge>
@@ -168,7 +194,7 @@ export default function CoachDetailPage() {
           tone="success"
         />
         <StatCard
-          label="Location"
+          label="Region / Gobol"
           value={profile.location || "—"}
           icon={MapPin}
           tone="warning"
@@ -180,6 +206,7 @@ export default function CoachDetailPage() {
           <h3 className="font-bold">Account</h3>
           <dl className="mt-3 space-y-2 text-sm">
             <Row label="Email" value={coachEmail} />
+            <Row label="Specializations" value={specialization} />
             <Row label="Joined" value={formatDate(coach.createdAt)} />
             <Row label="Last updated" value={formatDate(coach.updatedAt)} />
             <Row
@@ -193,6 +220,59 @@ export default function CoachDetailPage() {
               />
             ) : null}
           </dl>
+          <div className="mt-4 border-t border-[var(--vf-border)] pt-4">
+            <p className="text-sm font-semibold">Set specializations (Admin)</p>
+            <p className="mt-1 text-xs text-[var(--vf-muted)]">
+              General Fitness is exclusive and cannot be combined with other specializations.
+            </p>
+            <div className="mt-2 grid max-h-56 grid-cols-1 gap-1 overflow-y-auto rounded-[12px] border border-[var(--vf-border)] bg-[var(--vf-surface-muted)] p-2 sm:grid-cols-2">
+              {SPECIALIZATIONS.map((option) => {
+                const selected = specializationDraft.includes(option);
+                const generalSelected = specializationDraft.includes("General Fitness");
+                const othersSelected = specializationDraft.some((item) => item !== "General Fitness");
+                const disabled =
+                  !selected
+                  && (
+                    (generalSelected && option !== "General Fitness")
+                    || (option === "General Fitness" && othersSelected)
+                  );
+                return (
+                  <label
+                    key={option}
+                    className={`flex items-start gap-2 px-1 py-1 text-sm ${
+                      disabled ? "cursor-not-allowed opacity-50" : ""
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={selected}
+                      disabled={disabled}
+                      onChange={() => {
+                        const result = canToggleSpecialization(specializationDraft, option, {
+                          selecting: !selected,
+                        });
+                        if (!result.ok) {
+                          toast.error(result.message);
+                          return;
+                        }
+                        setSpecializationDraft(result.next);
+                      }}
+                    />
+                    <span>{option}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="mt-3">
+              <Button
+                disabled={savingSpec || !specializationDraft.length}
+                onClick={handleSaveSpecialization}
+              >
+                {savingSpec ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </div>
         </Card>
 
         <Card className="p-5 xl:col-span-2">

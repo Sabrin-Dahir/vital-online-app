@@ -27,6 +27,10 @@ function endOfDay(date = new Date()) {
   return d;
 }
 
+const calcBmi = require('../utils/calcBmi');
+const { bmiCategory } = require('../utils/calcBmi');
+const { respondWithCaughtError } = require('../utils/httpErrors');
+
 async function getProgress(req, res) {
   try {
     const today = startOfDay();
@@ -108,11 +112,7 @@ async function getProgress(req, res) {
 
     const height = req.user.clientData?.height;
     const weight = req.user.clientData?.weight;
-    let bmi = null;
-    if (height && weight) {
-      const m = height / 100;
-      bmi = Math.round((weight / (m * m)) * 10) / 10;
-    }
+    const bmi = calcBmi(height, weight);
 
     return res.json({
       summary: {
@@ -120,8 +120,10 @@ async function getProgress(req, res) {
         caloriesOut: Number(caloriesOut) || 0,
         hydration: Number(hydration) || 0,
         netCalories: (Number(caloriesIn) || 0) - (Number(caloriesOut) || 0),
-        bmi: bmi ?? req.user.profile?.bmi ?? null,
+        bmi,
+        bmiCategory: bmiCategory(bmi),
         weightKg: weight ?? null,
+        heightCm: height ?? null,
         logCount: todayMeals.length + approvedToday.length + todayWater.length
           + (todayAdherence?.mealAdherence?.some((m) => m.followed) ? 1 : 0),
       },
@@ -147,8 +149,8 @@ async function getProgress(req, res) {
 async function logWeight(req, res) {
   try {
     const weight = Number(req.body.weightKg ?? req.body.weight);
-    if (!Number.isFinite(weight) || weight < 2 || weight > 500) {
-      return res.status(400).json({ message: 'Enter a valid weight in kg' });
+    if (!Number.isFinite(weight) || weight < 20 || weight > 300) {
+      return res.status(400).json({ message: 'Weight must be between 20 kg and 300 kg.' });
     }
 
     const user = await User.findById(req.user._id);
@@ -159,15 +161,21 @@ async function logWeight(req, res) {
       user.clientData.weight_history = [];
     }
     user.clientData.weight_history.push({ date: new Date(), weight });
-    await user.save();
+    user.markModified('clientData');
+    await user.save({ validateModifiedOnly: true });
+
+    const height = user.clientData.height;
+    const bmi = calcBmi(height, weight);
 
     return res.status(201).json({
       weightKg: weight,
+      heightCm: height ?? null,
+      bmi,
+      bmiCategory: bmiCategory(bmi),
       weight_history: user.clientData.weight_history,
     });
   } catch (error) {
-    console.error('logWeight:', error.message);
-    return res.status(500).json({ message: 'Unable to log weight' });
+    return respondWithCaughtError(res, error, 'Unable to log weight');
   }
 }
 

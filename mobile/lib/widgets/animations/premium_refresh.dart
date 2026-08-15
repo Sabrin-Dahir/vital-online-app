@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'app_motion.dart';
+import '../../screens/dashboard/widgets/coach_home/coach_dashboard_theme.dart';
 
-/// Pull-to-refresh without any spinner chrome.
+/// RefreshIndicator wrapper with smooth color animation and optional overlay.
 class PremiumRefreshIndicator extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final Widget child;
@@ -16,18 +17,23 @@ class PremiumRefreshIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final refreshColor = color ?? CoachDashboardTheme.primary;
+
     return RefreshIndicator(
       onRefresh: onRefresh,
-      color: Colors.transparent,
-      backgroundColor: Colors.transparent,
-      strokeWidth: 0.0001,
-      displacement: 0,
-      elevation: 0,
+      color: refreshColor,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? const Color(0xFF181B24)
+          : Colors.white,
+      strokeWidth: 2.5,
+      displacement: 48,
+      edgeOffset: 8,
       child: child,
     );
   }
 }
 
+/// Cross-fade between loading and content states.
 class AnimatedContentSwitcher extends StatelessWidget {
   final Widget child;
   final Duration duration;

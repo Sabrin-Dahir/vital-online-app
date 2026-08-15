@@ -326,6 +326,9 @@ function serializeWeeklyPlan(plan) {
 
 async function createWeeklyWorkoutPlan(req, res) {
   try {
+    const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+    if (!enforceCoachSpecialization(req, res, { resourceType: 'weekly_workout_plan' })) return;
+
     const {
       clientId,
       fitnessClassId,
@@ -490,6 +493,9 @@ async function getCoachWeeklyWorkoutPlans(req, res) {
 
 async function updateWeeklyWorkoutPlan(req, res) {
   try {
+    const { enforceCoachSpecialization } = require('../utils/coachSpecialization');
+    if (!enforceCoachSpecialization(req, res, { resourceType: 'weekly_workout_plan' })) return;
+
     const plan = await WeeklyWorkoutPlan.findOne({
       _id: req.params.id,
       coach: req.user._id,

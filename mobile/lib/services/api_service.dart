@@ -219,14 +219,8 @@ class ApiService {
           if (age != null) 'age': age,
           if (heightCm != null) 'height': heightCm,
           if (weightKg != null) 'weight': weightKg,
-          if (fitnessGoal != null &&
-              [
-                'lose_weight',
-                'gain_muscle',
-                'maintain',
-                'other',
-              ].contains(fitnessGoal))
-            'fitness_goal': fitnessGoal,
+          if (fitnessGoal != null && fitnessGoal.trim().isNotEmpty)
+            'fitness_goal': fitnessGoal.trim(),
         }),
       ));
 
@@ -341,6 +335,7 @@ class ApiService {
     String? fitnessGoal,
     String? bio,
     String? experience,
+    String? location,
     List<String>? specialization,
     int? yearsExperience,
     List<String>? certifications,
@@ -361,6 +356,7 @@ class ApiService {
         if (fitnessGoal != null) 'fitness_goal': fitnessGoal,
         if (bio != null) 'bio': bio,
         if (experience != null) 'experience': experience,
+        if (location != null) 'location': location,
         if (specialization != null) 'specialization': specialization,
         if (yearsExperience != null) 'yearsExperience': yearsExperience,
         if (certifications != null) 'certifications': certifications,
@@ -634,7 +630,7 @@ class ApiService {
     required String location,
     required int yearsExperience,
     required String certifications,
-    required String specialization,
+    required dynamic specialization,
     required String bio,
     required String experience,
     required String message,
@@ -2064,6 +2060,136 @@ class ApiService {
     throw Exception(_parseError(response));
   }
 
+  Future<Map<String, dynamic>> getCoachAttendance({
+    String? range,
+    String? type,
+    String? status,
+    String? clientId,
+    String? groupId,
+  }) async {
+    final params = <String, String>{};
+    if (range != null && range.isNotEmpty) params['range'] = range;
+    if (type != null && type.isNotEmpty) params['type'] = type;
+    if (status != null && status.isNotEmpty) params['status'] = status;
+    if (clientId != null && clientId.isNotEmpty) params['clientId'] = clientId;
+    if (groupId != null && groupId.isNotEmpty) params['groupId'] = groupId;
+    final uri = Uri.parse('$baseUrl/coach/attendance').replace(queryParameters: params.isEmpty ? null : params);
+    final response = await _send(http.get(uri, headers: _headers()));
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    }
+    throw Exception(_parseError(response));
+  }
+
+  Future<Map<String, dynamic>> getCoachAttendanceSummary() async {
+    final response = await _send(http.get(
+      Uri.parse('$baseUrl/coach/attendance/summary'),
+      headers: _headers(),
+    ));
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    }
+    throw Exception(_parseError(response));
+  }
+
+  Future<Map<String, dynamic>> getAttendanceByClients({String? range, String? type}) async {
+    final params = <String, String>{};
+    if (range != null && range.isNotEmpty) params['range'] = range;
+    if (type != null && type.isNotEmpty) params['type'] = type;
+    final uri = Uri.parse('$baseUrl/coach/attendance/clients')
+        .replace(queryParameters: params.isEmpty ? null : params);
+    final response = await _send(http.get(uri, headers: _headers()));
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    }
+    throw Exception(_parseError(response));
+  }
+
+  Future<Map<String, dynamic>> getAttendanceByGroups({String? range}) async {
+    final params = <String, String>{};
+    if (range != null && range.isNotEmpty) params['range'] = range;
+    final uri = Uri.parse('$baseUrl/coach/attendance/groups')
+        .replace(queryParameters: params.isEmpty ? null : params);
+    final response = await _send(http.get(uri, headers: _headers()));
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    }
+    throw Exception(_parseError(response));
+  }
+
+  Future<Map<String, dynamic>> getClientAttendanceDetail(
+    String clientId, {
+    String? range,
+    String? type,
+  }) async {
+    final params = <String, String>{};
+    if (range != null && range.isNotEmpty) params['range'] = range;
+    if (type != null && type.isNotEmpty) params['type'] = type;
+    final uri = Uri.parse('$baseUrl/coach/attendance/clients/$clientId')
+        .replace(queryParameters: params.isEmpty ? null : params);
+    final response = await _send(http.get(uri, headers: _headers()));
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    }
+    throw Exception(_parseError(response));
+  }
+
+  Future<Map<String, dynamic>> getGroupAttendance(String classId) async {
+    final response = await _send(http.get(
+      Uri.parse('$baseUrl/coach/attendance/groups/$classId'),
+      headers: _headers(),
+    ));
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    }
+    throw Exception(_parseError(response));
+  }
+
+  Future<Map<String, dynamic>> updateAttendanceRecord(
+    String id, {
+    required String status,
+    String? notes,
+  }) async {
+    final response = await _send(http.patch(
+      Uri.parse('$baseUrl/coach/attendance/$id'),
+      headers: _headers(),
+      body: jsonEncode({
+        'status': status,
+        if (notes != null) 'notes': notes,
+      }),
+    ));
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    }
+    throw Exception(_parseError(response));
+  }
+
+  Future<Map<String, dynamic>> getMyAttendance({
+    String? range,
+    String? type,
+  }) async {
+    final params = <String, String>{};
+    if (range != null && range.isNotEmpty) params['range'] = range;
+    if (type != null && type.isNotEmpty) params['type'] = type;
+    final uri = Uri.parse('$baseUrl/user/attendance').replace(queryParameters: params.isEmpty ? null : params);
+    final response = await _send(http.get(uri, headers: _headers()));
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    }
+    throw Exception(_parseError(response));
+  }
+
+  Future<Map<String, dynamic>> getMyAttendanceSummary() async {
+    final response = await _send(http.get(
+      Uri.parse('$baseUrl/user/attendance/summary'),
+      headers: _headers(),
+    ));
+    if (response.statusCode == 200) {
+      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    }
+    throw Exception(_parseError(response));
+  }
+
   Future<Map<String, dynamic>> getCoachReports() async {
     final response = await _send(http.get(
       Uri.parse('$baseUrl/coach/reports'),
@@ -2438,16 +2564,60 @@ class ApiService {
     required String email,
     required String password,
     String role = 'user',
+    String? phone,
+    int? age,
+    String? gender,
+    double? heightCm,
+    double? weightKg,
+    String? fitnessGoal,
+    String? location,
+    int? yearsExperience,
+    String? certifications,
+    dynamic specialization,
+    String? bio,
+    String? experience,
+    String? message,
+    List<String>? workingDays,
+    List<String>? appointmentDays,
+    List<Map<String, String>>? dayAvailability,
+    int? appointmentDurationMinutes,
+    List<Map<String, dynamic>>? certificateFiles,
   }) async {
+    final payload = <String, dynamic>{
+      'name': name.trim(),
+      'full_name': name.trim(),
+      'email': PasswordUtils.normalizeEmail(email),
+      'username': PasswordUtils.normalizeEmail(email),
+      'password': password,
+      'role': role,
+    };
+    if (phone != null) payload['phone'] = phone;
+    if (age != null) payload['age'] = age;
+    if (gender != null && gender.trim().isNotEmpty) payload['gender'] = gender.trim();
+    if (heightCm != null) payload['height'] = heightCm;
+    if (weightKg != null) payload['weight'] = weightKg;
+    if (fitnessGoal != null && fitnessGoal.trim().isNotEmpty) {
+      payload['fitness_goal'] = fitnessGoal.trim();
+    }
+    if (location != null) payload['location'] = location;
+    if (yearsExperience != null) payload['yearsExperience'] = yearsExperience;
+    if (certifications != null) payload['certifications'] = certifications;
+    if (specialization != null) payload['specialization'] = specialization;
+    if (bio != null) payload['bio'] = bio;
+    if (experience != null) payload['experience'] = experience;
+    if (message != null) payload['message'] = message;
+    if (workingDays != null) payload['workingDays'] = workingDays;
+    if (appointmentDays != null) payload['appointmentDays'] = appointmentDays;
+    if (dayAvailability != null) payload['dayAvailability'] = dayAvailability;
+    if (appointmentDurationMinutes != null) {
+      payload['appointmentDurationMinutes'] = appointmentDurationMinutes;
+    }
+    if (certificateFiles != null) payload['certificateFiles'] = certificateFiles;
+
     final response = await _send(http.post(
       Uri.parse('$baseUrl/admin/users'),
       headers: _headers(),
-      body: jsonEncode({
-        'name': name.trim(),
-        'email': PasswordUtils.normalizeEmail(email),
-        'password': password,
-        'role': role,
-      }),
+      body: jsonEncode(payload),
     ));
     if (response.statusCode == 201) return jsonDecode(response.body);
     throw Exception(_parseError(response));
@@ -2546,7 +2716,7 @@ class ApiService {
     required String location,
     required int yearsExperience,
     required String certifications,
-    required String specialization,
+    required dynamic specialization,
     required String bio,
     required String experience,
     required String message,
@@ -2672,8 +2842,12 @@ class ApiService {
       }
       if (body['errors'] != null && body['errors'] is List) {
         final errors = body['errors'] as List;
-        if (errors.isNotEmpty && errors[0]['msg'] != null) {
-          return '${errors[0]['path'] ?? 'Field'}: ${errors[0]['msg']}';
+        if (errors.isNotEmpty) {
+          final first = errors[0];
+          if (first is Map) {
+            final msg = first['message'] ?? first['msg'];
+            if (msg != null) return msg.toString();
+          }
         }
       }
       return 'Request failed with status ${response.statusCode}';

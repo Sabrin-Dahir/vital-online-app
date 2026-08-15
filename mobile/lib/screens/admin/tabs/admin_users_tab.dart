@@ -3,6 +3,7 @@ import '../../dashboard/widgets/coach_home/coach_dashboard_theme.dart';
 import '../../../models/user_model.dart';
 import '../../../services/api_service.dart';
 import '../../../widgets/scrollable_body.dart';
+import '../../auth/register_screen.dart';
 import '../widgets/admin_management_widgets.dart';
 import '../screens/admin_member_detail_screen.dart';
 
@@ -77,6 +78,26 @@ class AdminUsersTabState extends State<AdminUsersTab> {
         final bn = ApiService.displayName(b is Map ? Map<dynamic, dynamic>.from(b) : null);
         return an.compareTo(bn);
       });
+  }
+
+  Future<void> _openRegisterClient() async {
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const RegisterScreen(adminCreating: true),
+      ),
+    );
+    if (result == null || !mounted) return;
+    await refresh();
+    if (!mounted) return;
+    final user = result['user'] is Map ? Map<String, dynamic>.from(result['user'] as Map) : result;
+    final name = ApiService.displayName(user);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result['message']?.toString() ?? '$name registered as a client.'),
+        backgroundColor: CoachDashboardTheme.success,
+      ),
+    );
   }
 
   int get _activeCount => _users.where((u) => (u['status'] as String? ?? 'active') == 'active').length;
@@ -174,6 +195,15 @@ class AdminUsersTabState extends State<AdminUsersTab> {
           Text(
             'View registration details from the app. You can delete a member account; editing profiles is not allowed.',
             style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : CoachDashboardTheme.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _openRegisterClient,
+              icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+              label: const Text('Register client'),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(

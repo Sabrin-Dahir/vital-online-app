@@ -50,17 +50,31 @@ export default function ProfileDetails({ profile, extras = [] }) {
           ) }
       : null,
     { label: "Phone", value: profile.phone },
-    { label: "Location", value: profile.location },
+    { label: "Region / Gobol", value: profile.location },
     { label: "Age", value: profile.age },
     profile.heightCm != null && profile.heightCm !== ""
       ? { label: "Height (cm)", value: profile.heightCm }
+      : null,
+    profile.weightKg != null && profile.weightKg !== ""
+      ? { label: "Weight (kg)", value: profile.weightKg }
+      : null,
+    profile.bmi != null && profile.bmi !== ""
+      ? {
+          label: "BMI",
+          value: profile.bmiCategory
+            ? `${profile.bmi} (${profile.bmiCategory})`
+            : profile.bmi,
+        }
       : null,
     { label: "Years experience", value: profile.yearsExperience },
     { label: "Experience", value: profile.experience },
     { label: "Certifications", value: profile.certifications },
     {
-      label: "Specialization",
-      value: formatList(profile.specialization),
+      label: "Specializations",
+      value:
+        formatList(profile.specializations)
+        || formatList(profile.specialization)
+        || profile.primarySpecialization,
       fullWidth: true },
     { label: "Working days", value: formatList(profile.workingDays) },
     { label: "Appointment days", value: formatList(profile.appointmentDays) },

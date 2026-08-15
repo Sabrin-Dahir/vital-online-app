@@ -93,13 +93,25 @@ export default function CoachAppointmentsPage() {
       toast.error("Pick a date and time");
       return;
     }
+    const when = new Date(form.dateTime);
+    if (Number.isNaN(when.getTime()) || when.getTime() <= Date.now()) {
+      toast.error("Appointment must be scheduled in the future");
+      return;
+    }
+    const duration = Number(form.durationMinutes);
+    if (!Number.isFinite(duration) || duration < 5 || duration > 240) {
+      toast.error("Appointment duration must be between 5 and 240 minutes");
+      return;
+    }
     setSaving(true);
     try {
       await createCoachAppointment({
         clientId: form.clientId,
-        dateTime: new Date(form.dateTime).toISOString(),
-        durationMinutes: Number(form.durationMinutes) || 60,
-        notes: form.notes.trim() });
+        dateTime: when.toISOString(),
+        durationMinutes: duration,
+        notes: form.notes.trim(),
+        timezoneOffsetMinutes: -when.getTimezoneOffset(),
+      });
       toast.success("Appointment scheduled with client");
       setForm((current) => ({
         ...current,
@@ -177,11 +189,13 @@ export default function CoachAppointmentsPage() {
               Duration (minutes)
               <input
                 type="number"
-                min="15"
-                step="15"
+                min="5"
+                max="240"
+                step="5"
                 value={form.durationMinutes}
                 onChange={(e) => setForm((c) => ({ ...c, durationMinutes: e.target.value }))}
                 className={fieldClass}
+                required
               />
             </label>
             <label className="block text-sm md:col-span-2">

@@ -3,24 +3,22 @@ const path = require('path');
 const User = require('../models/User');
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
-const ADMIN_USERNAME = 'admin@gmail.com';
-const ADMIN_PASSWORD = '123123';
+const ADMIN_USERNAME = String(process.env.ADMIN_USERNAME || '').trim().toLowerCase();
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 async function reset() {
+  if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
+    console.error(
+      'Set ADMIN_USERNAME and ADMIN_PASSWORD in the environment. '
+        + 'This script does not use a built-in email or password.',
+    );
+    process.exit(1);
+  }
+
   try {
     await mongoose.connect(process.env.MONGO_URI);
 
-    // Prefer the shared admin identity used by web + mobile
     let admin = await User.findOne({ username: ADMIN_USERNAME });
-
-    // Migrate legacy username "admin" if present and email-admin does not exist yet
-    if (!admin) {
-      const legacy = await User.findOne({ username: 'admin', role: 'admin' });
-      if (legacy) {
-        legacy.username = ADMIN_USERNAME;
-        admin = legacy;
-      }
-    }
 
     if (admin) {
       admin.password = ADMIN_PASSWORD;
@@ -32,7 +30,7 @@ async function reset() {
       admin.lock_until = null;
       admin.adminData = { permissions: 'super-admin' };
       await admin.save();
-      console.log(`Reset admin "${ADMIN_USERNAME}" password to "${ADMIN_PASSWORD}"`);
+      console.log(`Reset admin "${ADMIN_USERNAME}" password`);
     } else {
       await User.create({
         username: ADMIN_USERNAME,
@@ -43,7 +41,7 @@ async function reset() {
         must_change_password: false,
         adminData: { permissions: 'super-admin' },
       });
-      console.log(`Created admin "${ADMIN_USERNAME}" with password "${ADMIN_PASSWORD}"`);
+      console.log(`Created admin "${ADMIN_USERNAME}"`);
     }
 
     const verified = await User.findOne({ username: ADMIN_USERNAME }).select('+password');

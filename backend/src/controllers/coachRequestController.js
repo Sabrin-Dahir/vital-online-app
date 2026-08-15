@@ -32,6 +32,20 @@ async function submitCoachRequest(req, res) {
       return res.status(404).json({ message: 'Coach not found' });
     }
 
+    const {
+      assertCoachMatchesClientGoal,
+    } = require('../utils/coachSpecialization');
+    const member = await User.findById(req.user._id).select('clientData full_name username').lean();
+    const match = assertCoachMatchesClientGoal(member, coach);
+    if (!match.ok) {
+      return res.status(match.status).json({
+        message: match.message,
+        code: match.code,
+        fitnessGoal: match.fitnessGoal,
+        coachSpecializations: match.coachSpecializations,
+      });
+    }
+
     const [legacyAssignment, modernAssignment] = await Promise.all([
       CoachAssignment.findOne({ user: req.user._id, status: 'active' }).select('_id'),
       CoachClientAssignment.findOne({ user_id: req.user._id, status: 'active' }).select('_id'),
@@ -176,6 +190,21 @@ async function approveCoachRequest(req, res) {
 
     if (!request) {
       return res.status(404).json({ message: 'Request not found' });
+    }
+
+    const {
+      assertCoachMatchesClientGoal,
+    } = require('../utils/coachSpecialization');
+    const member = await User.findById(request.user._id || request.user)
+      .select('clientData full_name username')
+      .lean();
+    const coachDoc = await User.findById(req.user._id).select(PUBLIC_COACH_SELECT).lean();
+    const match = assertCoachMatchesClientGoal(member, coachDoc);
+    if (!match.ok) {
+      return res.status(match.status).json({
+        message: match.message,
+        code: match.code,
+      });
     }
 
     // Validate optional class enrollment BEFORE creating assignments so a bad

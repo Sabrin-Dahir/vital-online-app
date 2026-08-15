@@ -1,3 +1,4 @@
+require('./config/mongooseSetup');
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
@@ -127,8 +128,8 @@ app.use((error, req, res, next) => {
   if (error?.message === 'Not allowed by CORS') {
     return res.status(403).json({ message: 'Not allowed by CORS' });
   }
-  console.error(error);
-  return res.status(500).json({ message: 'Something went wrong' });
+  const { respondWithCaughtError } = require('./utils/httpErrors');
+  return respondWithCaughtError(res, error, 'Something went wrong');
 });
 
 module.exports = app;

@@ -117,6 +117,12 @@ async function uploadFileDataUrl(dataUrl, {
     : `${fileNamePrefix}_${Date.now()}.${ext}`;
   const finalName = resolvedName.endsWith(`.${ext}`) ? resolvedName : `${resolvedName}.${ext}`;
   const buffer = Buffer.from(base64FromDataUrl(value), 'base64');
+  const maxBytes = Number(process.env.MAX_UPLOAD_BYTES) || 5 * 1024 * 1024;
+  if (buffer.length > maxBytes) {
+    const err = new Error(`File is too large. Maximum size is ${Math.round(maxBytes / (1024 * 1024))} MB`);
+    err.code = 'FILE_TOO_LARGE';
+    throw err;
+  }
   const file = await toFile(buffer, finalName);
 
   const result = await client.files.upload({
