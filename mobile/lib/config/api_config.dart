@@ -30,10 +30,19 @@ class ApiConfig {
   static bool get _hasHostOverride => _hostOverride.isNotEmpty;
 
   /// True when pointing at a non-production host (local / LAN / emulator).
-  static bool get isLocalOverride =>
-      _hasUrlOverride ||
-      _hasHostOverride ||
-      (kDebugMode && !_hasUrlOverride);
+  static bool get isLocalOverride {
+    if (_hasUrlOverride) {
+      final lower = _urlOverride.toLowerCase();
+      return lower.contains('127.0.0.1') ||
+          lower.contains('localhost') ||
+          lower.contains('10.0.2.2') ||
+          lower.contains('192.168.');
+    }
+    if (_hasHostOverride) {
+      return _hostOverride != _prodHost;
+    }
+    return kDebugMode;
+  }
 
   static int get port {
     if (_portOverride.isNotEmpty) {
@@ -48,7 +57,7 @@ class ApiConfig {
     return _prodHost;
   }
 
-  /// http vs https. Explicit override wins; production Render is always HTTPS.
+  /// http vs https. Explicit override wins; production Contabo is always HTTPS.
   static String get scheme {
     if (_schemeOverride.isNotEmpty) return _schemeOverride;
     if (_hasHostOverride) {
@@ -92,7 +101,7 @@ class ApiConfig {
     return '$scheme://$_authority';
   }
 
-  /// Health / cold-start timeout. Local Mongo can be slow; Render free tier needs longer wakes.
+  /// Health / cold-start timeout. Local Mongo can be slow.
   static Duration get healthTimeout =>
       isLocalOverride ? const Duration(seconds: 15) : const Duration(seconds: 45);
 

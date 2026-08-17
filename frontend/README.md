@@ -6,11 +6,11 @@ React web app for Admin / Coach / Member. Uses the **same** Node API and MongoDB
 
 | Layer | URL |
 |--------|-----|
-| API (Render) | `https://vital-online-app.onrender.com/api` |
+| API (Contabo) | `https://169.58.179.28.sslip.io/api` |
 | Database | MongoDB Atlas `vitalguide` |
-| Web (Vercel) | set `CLIENT_URL` on Render to your Vercel URL |
+| Web | served from the same Contabo VPS (Nginx) |
 
-Production builds (`vite build` / Vercel) read `frontend/.env.production` and call the Render API.
+Production builds (`vite build`) read `frontend/.env.production` and call the Contabo API.
 
 ## Local development
 

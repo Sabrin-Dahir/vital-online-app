@@ -12,7 +12,7 @@ flutter run
 
 **Release / installed APKs** use the production API by default:
 
-`https://vital-online-app.onrender.com/api`
+`https://169.58.179.28.sslip.io/api`
 
 Do **not** point release builds at `localhost` / `127.0.0.1` — those only work on the machine running the Node server.
 
@@ -31,9 +31,9 @@ flutter run --dart-define=API_URL=http://192.168.x.x:5050/api
 ```bash
 flutter build apk --release
 # Explicit production API (same as release default):
-flutter build apk --release --dart-define=API_URL=https://vital-online-app.onrender.com/api
+flutter build apk --release --dart-define=API_URL=https://169.58.179.28.sslip.io/api
 ```
 
-Current shipping version: **1.2.0 (versionCode 4)**. Package ID remains `com.example.vital_fitness` so installs update over the previous APK.
+Current shipping version: **1.2.0 (versionCode 5)**. Package ID remains `com.example.vital_fitness` so installs update over the previous APK.
 
 See `lib/config/api_config.dart`.

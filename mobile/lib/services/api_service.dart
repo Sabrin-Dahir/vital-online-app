@@ -76,8 +76,7 @@ class ApiService {
             '  cd backend && npm start';
       }
       return 'Cannot reach the server at ${ApiConfig.baseUrl}.\n\n'
-          'Check your internet connection. If this persists, the '
-          'production API may be waking up (Render) — wait ~30s and retry.';
+          'Check your internet connection and try again.';
     }
     return message.replaceAll('Exception: ', '');
   }

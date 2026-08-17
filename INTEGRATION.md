@@ -12,7 +12,7 @@ How the three apps connect. They all talk to the **same Express API**, which rea
          └───────────┬───────────┘
                      ▼
          ┌───────────────────────┐
-         │  Backend (Render)     │
+         │  Backend (Contabo)    │
          │  Express + Socket.IO  │
          └───────────┬───────────┘
                      ▼
@@ -24,7 +24,7 @@ How the three apps connect. They all talk to the **same Express API**, which rea
 
 | Environment | API base URL |
 |-------------|--------------|
-| **Production** | `https://vital-online-app.onrender.com/api` |
+| **Production** | `https://169.58.179.28.sslip.io/api` |
 | **Local dev** | `http://127.0.0.1:5050/api` |
 
 ---
@@ -74,10 +74,10 @@ String get baseUrl => ApiConfig.baseUrl;
 
 | Build | Host used |
 |-------|-----------|
-| **Release APK** | `vital-online-app.onrender.com` (HTTPS) |
+| **Release APK** | `169.58.179.28.sslip.io` (HTTPS) |
 | **Debug** (`flutter run`) | `127.0.0.1:5050` |
 
-Override: `--dart-define=API_URL=https://vital-online-app.onrender.com/api`
+Override: `--dart-define=API_URL=https://169.58.179.28.sslip.io/api`
 
 ---
 
@@ -106,7 +106,7 @@ export const api = axios.create({ baseURL: API_BASE_URL, ... });
 
 | Mode | API URL |
 |------|---------|
-| **Production** (`vite build` / Vercel) | `https://vital-online-app.onrender.com/api` |
+| **Production** (`vite build`) | `https://169.58.179.28.sslip.io/api` |
 | **Dev** (`npm run dev`) | `http://127.0.0.1:5050/api` |
 
 ---
@@ -139,8 +139,8 @@ Required env: `IMAGEKIT_PUBLIC_KEY`, `IMAGEKIT_PRIVATE_KEY`, `IMAGEKIT_URL_ENDPO
 
 | Piece | Host | Points to |
 |-------|------|-----------|
-| Backend | Render → `vital-online-app.onrender.com` | Atlas `vitalguide` |
-| Frontend | Vercel (root dir: `frontend`) | Render `/api` |
-| Mobile APK | Device install | Render `/api` |
+| Backend | Contabo → `169.58.179.28.sslip.io` | Atlas `vitalguide` |
+| Frontend | Contabo Nginx | Contabo `/api` |
+| Mobile APK | Device install | Contabo `/api` |
 
-CORS on Render: set `CLIENT_URL` / `PUBLIC_WEB_URL` to your Vercel URL (`ALLOW_VERCEL_ORIGINS=true` already enabled).
+CORS on Contabo: set `CLIENT_URL` / `PUBLIC_WEB_URL` to `https://169.58.179.28.sslip.io`.
