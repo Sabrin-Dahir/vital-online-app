@@ -402,6 +402,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                       DropdownButtonFormField<String>(
                         value: _fitnessGoal,
+                        isExpanded: true,
                         decoration: _decoration(
                           label: 'Fitness goal',
                           icon: Icons.flag_outlined,
@@ -411,7 +412,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             .map(
                               (e) => DropdownMenuItem(
                                 value: e.key,
-                                child: Text(e.value),
+                                child: Text(
+                                  e.value,
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        selectedItemBuilder: (context) => _fitnessGoals
+                            .map(
+                              (e) => Align(
+                                alignment: AlignmentDirectional.centerStart,
+                                child: Text(
+                                  e.value,
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
                               ),
                             )
                             .toList(),
