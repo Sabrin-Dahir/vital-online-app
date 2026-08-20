@@ -628,6 +628,16 @@ class AdminCoachesTabState extends State<AdminCoachesTab> {
             ],
           ),
           children: [
+            _detailSection(isDark, 'Applicant', [
+              _detailRow('First Name', (app['firstName'] ?? name.split(' ').first).toString()),
+              _detailRow(
+                'Last Name',
+                (app['lastName'] ??
+                        (name.split(' ').length > 1 ? name.split(' ').sublist(1).join(' ') : ''))
+                    .toString(),
+              ),
+              _detailRow('Registration status', status),
+            ]),
             _buildCertificateFilesSection(isDark, _certificateFilesFromApp(app)),
             _detailSection(isDark, 'Contact', [
               _detailRow('Phone', app['phone']),

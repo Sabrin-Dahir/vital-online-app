@@ -1,7 +1,8 @@
 /** Frontend mirrors of backend/src/utils/fieldValidation.js */
 
 export const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/;
-export const FULL_NAME_RE = /^[\p{L}]+(?:\s+[\p{L}]+)*$/u;
+export const FULL_NAME_RE = /^[\p{L}]+(?:[\s'\-]+[\p{L}]+)*$/u;
+export const GIVEN_NAME_RE = /^[\p{L}]+(?:[\s'\-]+[\p{L}]+)*$/u;
 export const PHONE_RE = /^\+?[0-9][0-9\s\-()]{6,18}$/;
 export const FITNESS_GOALS = ["lose_weight", "gain_muscle", "maintain", "other"];
 
@@ -19,10 +20,28 @@ export function validateFullName(value) {
   if (!name) return "Full name is required";
   if (name.length > 80) return "Full name is too long";
   if (/\d/.test(name) || !FULL_NAME_RE.test(name)) {
-    return "Full name can only contain letters and spaces.";
+    return "Full name can only contain letters, spaces, hyphens, and apostrophes.";
   }
   if (name.length < 2) return "Full name is too short";
   return "";
+}
+
+export function validateGivenName(value, label = "Name") {
+  const name = String(value || "").trim();
+  if (!name) return `${label} is required`;
+  if (name.length > 40) return `${label} is too long`;
+  if (/\d/.test(name) || !GIVEN_NAME_RE.test(name)) {
+    return `${label} can only contain letters, spaces, hyphens, and apostrophes.`;
+  }
+  if (name.length < 2) return `${label} is too short`;
+  return "";
+}
+
+export function splitPersonName(fullName) {
+  const parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return { firstName: "", lastName: "" };
+  if (parts.length === 1) return { firstName: parts[0], lastName: "" };
+  return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
 }
 
 export function validatePassword(value) {

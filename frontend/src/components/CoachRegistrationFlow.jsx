@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { registerCoachAdmin, validateCoachCertificate } from "../api/adminApi";
 import { getErrorMessage } from "../api/client";
 import { matchSomaliaRegion, SOMALIA_REGIONS, validateSomaliaRegion } from "../utils/somaliaRegions";
 import { SPECIALIZATIONS, validateSpecializationSelection, canToggleSpecialization } from "../utils/coachSpecialization";
 import {
   validateEmail,
-  validateFullName,
+  validateGivenName,
   validatePassword,
 } from "../utils/fieldValidation";
 import {
@@ -33,7 +33,7 @@ const STEP_TITLES = [
 ];
 const DURATION_OPTIONS = [30, 45, 60];
 const MAX_CERTIFICATES = 5;
-const MAX_CERT_BYTES = 2 * 1024 * 1024;
+const MAX_CERT_BYTES = 10 * 1024 * 1024;
 
 const inputClass =
   "mt-1.5 w-full rounded-[12px] border border-[var(--vf-border)] bg-[var(--vf-surface-muted)] px-3 py-2.5 outline-none ring-[var(--vf-accent)] focus:ring-2";
@@ -42,7 +42,8 @@ const titleClass = "text-lg font-bold text-[var(--vf-text)]";
 
 function createEmptyCoachForm() {
   return {
-    full_name: "",
+    firstName: "",
+    lastName: "",
     username: "",
     password: "",
     phone: "",
@@ -85,6 +86,16 @@ export default function CoachRegistrationFlow({
 
   const set = setField;
 
+  useEffect(() => {
+    return () => {
+      form.certificates.forEach((item) => {
+        if (item?.previewUrl) {
+          URL.revokeObjectURL(item.previewUrl);
+        }
+      });
+    };
+  }, []);
+
   const workingDays = orderedDays(form.workingDays);
   const appointmentDays = orderedDays(form.appointmentDays);
 
@@ -95,10 +106,15 @@ export default function CoachRegistrationFlow({
 
   function validateCurrentStep() {
     if (step === 0) {
-      const nameError = validateFullName(form.full_name);
-      if (nameError) {
-        setFieldErrors((current) => ({ ...current, full_name: nameError }));
-        return showError(nameError);
+      const firstError = validateGivenName(form.firstName, "First name");
+      if (firstError) {
+        setFieldErrors((current) => ({ ...current, firstName: firstError }));
+        return showError(firstError);
+      }
+      const lastError = validateGivenName(form.lastName, "Last name");
+      if (lastError) {
+        setFieldErrors((current) => ({ ...current, lastName: lastError }));
+        return showError(lastError);
       }
       const emailError = validateEmail(form.username);
       if (emailError) {
@@ -129,7 +145,7 @@ export default function CoachRegistrationFlow({
       if (!form.certifications.trim()) return showError("List your certifications");
       if (!form.certificates.length) {
         return showError(
-          "Upload at least one certificate photo (JPG or PNG) that clearly shows your first and last name",
+          "Upload at least one certificate.",
         );
       }
       const specializationError = validateSpecializationSelection(form.specialization);
@@ -168,13 +184,49 @@ export default function CoachRegistrationFlow({
     void submit();
   }
 
+  async function prepareCertificatesForSubmit(certificates) {
+    const prepared = [];
+    for (const item of certificates) {
+      if (item.url) {
+        prepared.push({
+          url: item.url,
+          fileName: item.fileName || item.name,
+          mimeType: item.mimeType,
+          uploadedAt: item.uploadedAt,
+        });
+      } else if (item.dataUrl) {
+        prepared.push({
+          dataUrl: item.dataUrl,
+          fileName: item.fileName || item.name,
+          mimeType: item.mimeType,
+        });
+      } else if (item.file) {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error(`Could not read ${item.name}`));
+          reader.readAsDataURL(item.file);
+        });
+        prepared.push({
+          dataUrl,
+          fileName: item.name || item.fileName,
+          mimeType: item.mimeType || item.file.type,
+        });
+      }
+    }
+    return prepared;
+  }
+
   async function submit() {
     setSaving(true);
     setError("");
     try {
+      const certificateFilesPayload = await prepareCertificatesForSubmit(form.certificates);
       const result = await registerCoachAdmin({
-        name: form.full_name.trim(),
-        full_name: form.full_name.trim(),
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        name: `${form.firstName.trim()} ${form.lastName.trim()}`,
+        full_name: `${form.firstName.trim()} ${form.lastName.trim()}`,
         email: form.username.trim(),
         username: form.username.trim(),
         password: form.password,
@@ -195,12 +247,7 @@ export default function CoachRegistrationFlow({
           end: form.dayAvailability[day].end,
         })),
         appointmentDurationMinutes: form.appointmentDurationMinutes,
-        certificateFiles: form.certificates.map((file) => ({
-          url: file.url,
-          fileName: file.fileName,
-          mimeType: file.mimeType,
-          uploadedAt: file.uploadedAt,
-        })),
+        certificateFiles: certificateFilesPayload,
       });
       onCreated?.(result.user, result.message);
       resetForm();
@@ -236,75 +283,67 @@ export default function CoachRegistrationFlow({
     });
   }
 
-  async function onCertificateFiles(event) {
-    const files = Array.from(event.target.files || []);
+  function onCertificateFiles(event) {
+    const rawFiles = Array.from(event.target.files || []);
     event.target.value = "";
-    const expectedName = form.full_name.trim();
-    if (!expectedName) {
-      showError("Enter your full name first, then upload a certificate that shows that name.");
-      return;
-    }
+    if (!rawFiles.length) return;
+
     const remaining = MAX_CERTIFICATES - form.certificates.length;
     if (remaining <= 0) {
       showError(`You can upload at most ${MAX_CERTIFICATES} certificates`);
       return;
     }
-    setValidatingCert(true);
-    setError("");
+
     const additions = [];
     let lastError = "";
-    for (const file of files.slice(0, remaining)) {
-      if (file.size > MAX_CERT_BYTES) {
-        lastError = `${file.name} exceeds the 2 MB limit`;
-        continue;
-      }
+    for (const file of rawFiles.slice(0, remaining)) {
       const lower = file.name.toLowerCase();
-      if (!(lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png"))) {
-        lastError = `${file.name}: use JPG or PNG so your name can be verified`;
+
+      if (file.size > MAX_CERT_BYTES) {
+        lastError = `${file.name} exceeds the 10 MB limit`;
         continue;
       }
-      const mime = lower.endsWith(".png") ? "image/png" : "image/jpeg";
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ""));
-        reader.onerror = () => reject(new Error("Could not read file"));
-        reader.readAsDataURL(file);
+
+      const isImage = file.type.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif|bmp|svg|avif|heic)$/i.test(lower);
+      const isPdf = file.type === "application/pdf" || lower.endsWith(".pdf");
+      const previewUrl = isImage ? URL.createObjectURL(file) : null;
+      const mimeType = file.type || (isPdf ? "application/pdf" : isImage ? "image/jpeg" : "application/octet-stream");
+
+      additions.push({
+        file,
+        name: file.name,
+        fileName: file.name,
+        mimeType,
+        size: file.size,
+        previewUrl,
+        isPdf,
+        isImage,
       });
-      try {
-        const validated = await validateCoachCertificate({
-          dataUrl,
-          expectedName,
-          fileName: file.name,
-        });
-        const remoteUrl = String(validated?.url || "").trim();
-        if (!remoteUrl) {
-          lastError = "Certificate upload did not return a file URL. Try again.";
-          continue;
-        }
-        additions.push({
-          url: remoteUrl,
-          fileName: validated.fileName || file.name,
-          mimeType: validated.mimeType || mime,
-          uploadedAt: validated.uploadedAt,
-          preview: dataUrl,
-        });
-      } catch (err) {
-        lastError = getErrorMessage(err);
-      }
     }
-    setForm((current) => ({
-      ...current,
-      certificates: [...current.certificates, ...additions],
-    }));
-    if (!additions.length) {
-      setError(
-        lastError ||
-          `Certificate rejected. Upload a clear photo that shows your first and last name (${expectedName}).`,
-      );
-    } else {
+
+    if (additions.length > 0) {
+      setForm((current) => ({
+        ...current,
+        certificates: [...current.certificates, ...additions],
+      }));
+      setError(lastError);
+    } else if (lastError) {
       setError(lastError);
     }
-    setValidatingCert(false);
+  }
+
+  function removeCertificate(index) {
+    setForm((current) => {
+      const target = current.certificates[index];
+      if (target?.previewUrl) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return {
+        ...current,
+        certificates: current.certificates.filter((_, i) => i !== index),
+      };
+    });
+    setError("");
   }
 
   const stepBody = (() => {
@@ -316,24 +355,45 @@ export default function CoachRegistrationFlow({
             Start with your login credentials. You will access the coach dashboard after admin approval.
           </p>
           <label className="mt-5 block text-sm font-semibold">
-            Full Name *
+            First Name *
             <RegistrationCredentialInput
               className={inputClass}
-              name="coach-register-full-name"
-              autoComplete="name"
-              value={form.full_name}
+              name="coach-register-first-name"
+              autoComplete="given-name"
+              value={form.firstName}
               onFocus={markEdited}
               onChange={(e) => {
                 const value = e.target.value;
-                set("full_name", value);
+                set("firstName", value);
                 setFieldErrors((current) => ({
                   ...current,
-                  full_name: value.trim() ? validateFullName(value) : "",
+                  firstName: value.trim() ? validateGivenName(value, "First name") : "",
                 }));
               }}
             />
-            {fieldErrors.full_name ? (
-              <p className="mt-1 text-xs text-rose-600">{fieldErrors.full_name}</p>
+            {fieldErrors.firstName ? (
+              <p className="mt-1 text-xs text-rose-600">{fieldErrors.firstName}</p>
+            ) : null}
+          </label>
+          <label className="mt-4 block text-sm font-semibold">
+            Last Name *
+            <RegistrationCredentialInput
+              className={inputClass}
+              name="coach-register-last-name"
+              autoComplete="family-name"
+              value={form.lastName}
+              onFocus={markEdited}
+              onChange={(e) => {
+                const value = e.target.value;
+                set("lastName", value);
+                setFieldErrors((current) => ({
+                  ...current,
+                  lastName: value.trim() ? validateGivenName(value, "Last name") : "",
+                }));
+              }}
+            />
+            {fieldErrors.lastName ? (
+              <p className="mt-1 text-xs text-rose-600">{fieldErrors.lastName}</p>
             ) : null}
           </label>
           <label className="mt-4 block text-sm font-semibold">
@@ -454,43 +514,57 @@ export default function CoachRegistrationFlow({
           <div className="mt-6">
             <h3 className={titleClass}>Certificate Upload *</h3>
             <p className={helpClass}>
-              Upload a clear JPG/PNG of your certificate. Your first and last name must be visible on the
-              document (like a fitness trainer certificate), max 2 MB each, up to {MAX_CERTIFICATES}.
+              Upload your certificate files. Max 10 MB each, up to {MAX_CERTIFICATES}.
             </p>
             <div className="mt-3 flex flex-wrap gap-3">
-              {form.certificates.map((file, index) => (
-                <div key={`${file.url}-${index}`} className="relative h-24 w-24 overflow-hidden rounded-[12px] border border-[var(--vf-border)]">
-                  <img src={file.preview || file.url} alt={file.fileName} className="h-full w-full object-cover" />
-                  <button
-                    type="button"
-                    className="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 text-xs text-white"
-                    onClick={() =>
-                      setForm((current) => ({
-                        ...current,
-                        certificates: current.certificates.filter((_, i) => i !== index),
-                      }))
-                    }
+              {form.certificates.map((file, index) => {
+                const isPdf = file.isPdf || file.mimeType?.includes("pdf") || (file.name || file.fileName || "").toLowerCase().endsWith(".pdf");
+                const previewSrc = file.previewUrl || file.preview || file.url || file.dataUrl;
+                const name = file.name || file.fileName || `Certificate ${index + 1}`;
+
+                return (
+                  <div
+                    key={`${name}-${index}`}
+                    className="group relative flex w-28 flex-col items-center overflow-hidden rounded-[12px] border border-[var(--vf-border)] bg-[var(--vf-surface-muted)] p-2"
                   >
-                    ×
-                  </button>
-                </div>
-              ))}
+                    <div className="relative h-20 w-full overflow-hidden rounded-[8px] bg-black/5 flex items-center justify-center">
+                      {isPdf || !previewSrc ? (
+                        <div className="flex flex-col items-center justify-center p-1 text-center">
+                          <svg className="h-8 w-8 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V7.5L14.5 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                          </svg>
+                          <span className="mt-1 text-[10px] font-bold uppercase text-rose-600">PDF</span>
+                        </div>
+                      ) : (
+                        <img src={previewSrc} alt={name} className="h-full w-full object-cover" />
+                      )}
+                      <button
+                        type="button"
+                        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/70 text-xs text-white hover:bg-rose-600"
+                        title="Remove certificate"
+                        onClick={() => removeCertificate(index)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <p className="mt-1.5 w-full truncate text-center text-[11px] font-medium text-[var(--vf-text)]" title={name}>
+                      {name}
+                    </p>
+                  </div>
+                );
+              })}
             </div>
             <label className="mt-3 inline-flex">
               <input
                 type="file"
-                accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+                accept="*/*"
                 multiple
                 className="hidden"
-                disabled={validatingCert || form.certificates.length >= MAX_CERTIFICATES}
+                disabled={form.certificates.length >= MAX_CERTIFICATES}
                 onChange={onCertificateFiles}
               />
-              <span className="cursor-pointer rounded-[12px] border border-[var(--vf-border)] px-4 py-2 text-sm font-semibold">
-                {validatingCert
-                  ? "Validating…"
-                  : form.certificates.length
-                    ? "Add more certificates"
-                    : "Upload certificates"}
+              <span className="cursor-pointer rounded-[12px] border border-[var(--vf-border)] px-4 py-2 text-sm font-semibold hover:bg-[var(--vf-surface-muted)]">
+                {form.certificates.length ? "Add more certificates" : "Upload certificates"}
               </span>
             </label>
             {form.certificates.length ? (
@@ -774,7 +848,7 @@ export default function CoachRegistrationFlow({
       <>
         <h2 className={titleClass}>Review your application</h2>
         <p className={helpClass}>Confirm everything is correct before submitting for admin approval.</p>
-        <ReviewCard title="Account" rows={[["Name", form.full_name], ["Email", form.username]]} />
+        <ReviewCard title="Account" rows={[["First name", form.firstName], ["Last name", form.lastName], ["Email", form.username]]} />
         <ReviewCard
           title="Personal"
           rows={[

@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 const { validatePasswordPolicy, normalizeEmail } = require('./passwordUtils');
 
 const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/;
-const FULL_NAME_RE = /^[\p{L}]+(?:\s+[\p{L}]+)*$/u;
+const FULL_NAME_RE = /^[\p{L}]+(?:[\s'\-]+[\p{L}]+)*$/u;
+const GIVEN_NAME_RE = /^[\p{L}]+(?:[\s'\-]+[\p{L}]+)*$/u;
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const PHONE_RE = /^\+?[0-9][0-9\s\-()]{6,18}$/;
 
@@ -142,10 +143,54 @@ function validateFullName(value, { required = true } = {}) {
   const name = String(value).trim();
   if (name.length > 80) return 'Full name is too long';
   if (/\d/.test(name) || !FULL_NAME_RE.test(name)) {
-    return 'Full name can only contain letters and spaces.';
+    return 'Full name can only contain letters, spaces, hyphens, and apostrophes.';
   }
   if (name.length < 2) return 'Full name is too short';
   return null;
+}
+
+function validateGivenName(value, label = 'Name', { required = true } = {}) {
+  if (isBlank(value)) {
+    return required ? `${label} is required` : null;
+  }
+  const name = String(value).trim();
+  if (name.length > 40) return `${label} is too long`;
+  if (/\d/.test(name) || !GIVEN_NAME_RE.test(name)) {
+    return `${label} can only contain letters, spaces, hyphens, and apostrophes.`;
+  }
+  if (name.length < 2) return `${label} is too short`;
+  return null;
+}
+
+function splitPersonName(fullName) {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return { firstName: '', lastName: '' };
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' };
+  return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
+}
+
+/** Coach identity for certificates: First Name + Last Name only. */
+function resolveCoachPersonName(body = {}) {
+  const firstName = String(body.firstName || body.first_name || '').trim();
+  const lastName = String(body.lastName || body.last_name || '').trim();
+  if (firstName && lastName) {
+    return { firstName, lastName, fullName: `${firstName} ${lastName}` };
+  }
+  const fallback = String(
+    body.full_name || body.fullName || body.name || body.expectedName || '',
+  ).trim();
+  const split = splitPersonName(fallback);
+  return {
+    firstName: firstName || split.firstName,
+    lastName: lastName || split.lastName,
+    fullName: [firstName || split.firstName, lastName || split.lastName].filter(Boolean).join(' '),
+  };
+}
+
+function validateCoachPersonName(body = {}) {
+  const { firstName, lastName } = resolveCoachPersonName(body);
+  return validateGivenName(firstName, 'First name')
+    || validateGivenName(lastName, 'Last name');
 }
 
 function validatePhone(value, { required = false } = {}) {
@@ -438,6 +483,10 @@ module.exports = {
   requireText,
   validateEmail,
   validateFullName,
+  validateGivenName,
+  splitPersonName,
+  resolveCoachPersonName,
+  validateCoachPersonName,
   validatePhone,
   matchSomaliaRegion,
   validateSomaliaRegion,

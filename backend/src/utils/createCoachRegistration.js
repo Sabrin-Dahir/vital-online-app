@@ -5,7 +5,7 @@ const { parseWorkingDays, validateWorkingDays } = require('./workingDays');
 const { normalizeDayAvailability } = require('./appointmentSlots');
 const { buildCoachDataFromApplication } = require('./coachProfile');
 const { validatePasswordPolicy, normalizeEmail } = require('./passwordUtils');
-const { validateEmail, validateFullName, validatePhone, validateSomaliaRegion, matchSomaliaRegion } = require('./fieldValidation');
+const { validateEmail, validateCoachPersonName, resolveCoachPersonName, validatePhone, validateSomaliaRegion, matchSomaliaRegion } = require('./fieldValidation');
 const {
   validateSpecializationInput,
   specializationToStorage,
@@ -48,6 +48,10 @@ async function createCoachRegistration(body = {}, options = {}) {
   const {
     name,
     full_name,
+    firstName,
+    first_name,
+    lastName,
+    last_name,
     email,
     username,
     password,
@@ -65,12 +69,22 @@ async function createCoachRegistration(body = {}, options = {}) {
     dayAvailability,
     appointmentDurationMinutes,
     certificateFiles,
+    certificates,
   } = body;
+  const rawCertificates = certificateFiles || certificates;
 
   const identity = normalizeEmail(username || email);
-  const fullName = String(name || full_name || '').trim();
+  const person = resolveCoachPersonName({
+    firstName,
+    first_name,
+    lastName,
+    last_name,
+    name,
+    full_name,
+  });
+  const fullName = person.fullName;
 
-  const nameError = validateFullName(fullName);
+  const nameError = validateCoachPersonName(person);
   if (nameError) throw new CoachRegistrationError(nameError);
   const emailError = validateEmail(identity);
   if (emailError) throw new CoachRegistrationError(emailError);
@@ -109,9 +123,11 @@ async function createCoachRegistration(body = {}, options = {}) {
   const { resolveCertificateFiles, requireCertificateFiles } = require('./certificateUpload');
   let uploadedCertificates = [];
   try {
-    requireCertificateFiles(certificateFiles);
-    uploadedCertificates = await resolveCertificateFiles(certificateFiles, {
+    requireCertificateFiles(rawCertificates);
+    uploadedCertificates = await resolveCertificateFiles(rawCertificates, {
       userId: identity,
+      firstName: person.firstName,
+      lastName: person.lastName,
       expectedName: fullName,
     });
   } catch (certError) {

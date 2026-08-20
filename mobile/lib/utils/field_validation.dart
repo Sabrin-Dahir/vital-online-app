@@ -3,7 +3,7 @@
 final RegExp emailRe = RegExp(
   r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$',
 );
-final RegExp fullNameRe = RegExp(r'^[\p{L}]+(?:\s+[\p{L}]+)*$', unicode: true);
+final RegExp fullNameRe = RegExp(r"^[\p{L}]+(?:[\s'\-]+[\p{L}]+)*$", unicode: true);
 final RegExp phoneRe = RegExp(r'^\+?[0-9][0-9\s\-()]{6,18}$');
 final RegExp digitsOnlyRe = RegExp(r'^\d+$');
 final RegExp hasDigitRe = RegExp(r'\d');
@@ -24,10 +24,28 @@ String? validateFullName(String? value) {
   if (name.isEmpty) return 'Full name is required';
   if (name.length > 80) return 'Full name is too long';
   if (hasDigitRe.hasMatch(name) || !fullNameRe.hasMatch(name)) {
-    return 'Full name can only contain letters and spaces.';
+    return 'Full name can only contain letters, spaces, hyphens, and apostrophes.';
   }
   if (name.length < 2) return 'Full name is too short';
   return null;
+}
+
+String? validateGivenName(String? value, {String label = 'Name'}) {
+  final name = (value ?? '').trim();
+  if (name.isEmpty) return '$label is required';
+  if (name.length > 40) return '$label is too long';
+  if (hasDigitRe.hasMatch(name) || !fullNameRe.hasMatch(name)) {
+    return '$label can only contain letters, spaces, hyphens, and apostrophes.';
+  }
+  if (name.length < 2) return '$label is too short';
+  return null;
+}
+
+({String firstName, String lastName}) splitPersonName(String? fullName) {
+  final parts = (fullName ?? '').trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+  if (parts.isEmpty) return (firstName: '', lastName: '');
+  if (parts.length == 1) return (firstName: parts.first, lastName: '');
+  return (firstName: parts.first, lastName: parts.sublist(1).join(' '));
 }
 
 String? validatePhone(String? value, {bool required = false}) {

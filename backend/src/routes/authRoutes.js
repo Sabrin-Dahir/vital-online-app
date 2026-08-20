@@ -15,7 +15,7 @@ const {
 const auth = require('../middleware/auth');
 const { handleValidation } = require('../middleware/validateRequest');
 const { MAX_PASSWORD_LENGTH } = require('../utils/passwordUtils');
-const { validateEmail, validateFullName } = require('../utils/fieldValidation');
+const { validateEmail, validateFullName, validateCoachPersonName } = require('../utils/fieldValidation');
 
 const router = express.Router();
 
@@ -65,7 +65,7 @@ router.post('/register', [
 
 router.post('/register-coach', [
   body().custom((_, { req }) => {
-    const nameError = validateFullName(req.body.full_name || req.body.name || req.body.fullName);
+    const nameError = validateCoachPersonName(req.body);
     if (nameError) throw new Error(nameError);
     const emailError = validateEmail(req.body.username || req.body.email);
     if (emailError) throw new Error(emailError);

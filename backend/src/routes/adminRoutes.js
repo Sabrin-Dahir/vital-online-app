@@ -4,7 +4,7 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const roles = require('../middleware/roles');
 const { handleValidation } = require('../middleware/validateRequest');
-const { validateEmail, validateFullName } = require('../utils/fieldValidation');
+const { validateEmail, validateFullName, validateCoachPersonName } = require('../utils/fieldValidation');
 const {
   getDashboardStats,
   getUsers, getUserDetail, getCoachDetail, getAdminMe, createUser, deleteUser, updateUserRole, updateUser, updateUserStatus,
@@ -44,7 +44,10 @@ router.post('/users/:id/regenerate-password', regeneratePassword);
 router.post('/users', [
   body('password').notEmpty().withMessage('Password is required'),
   body().custom((_, { req }) => {
-    const nameError = validateFullName(req.body.full_name || req.body.name || req.body.fullName);
+    const role = String(req.body.role || 'user').toLowerCase();
+    const nameError = role === 'coach'
+      ? validateCoachPersonName(req.body)
+      : validateFullName(req.body.full_name || req.body.name || req.body.fullName);
     if (nameError) throw new Error(nameError);
     const emailError = validateEmail(req.body.username || req.body.email);
     if (emailError) throw new Error(emailError);

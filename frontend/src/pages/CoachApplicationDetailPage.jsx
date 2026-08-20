@@ -200,6 +200,18 @@ export default function CoachApplicationDetailPage() {
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Card className="p-5 xl:col-span-2">
+          <h3 className="font-bold text-[var(--vf-text)]">Applicant</h3>
+          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+            <InfoRow label="First Name" value={app.firstName || displayName.split(/\s+/)[0]} />
+            <InfoRow
+              label="Last Name"
+              value={app.lastName || displayName.split(/\s+/).slice(1).join(" ")}
+            />
+            <InfoRow label="Registration status" value={status} />
+          </div>
+        </Card>
+
+        <Card className="p-5 xl:col-span-2">
           <h3 className="font-bold text-[var(--vf-text)]">Certificates</h3>
           <div className="mt-4">
             <CertificateFilesGallery

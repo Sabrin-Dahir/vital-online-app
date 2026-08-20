@@ -86,11 +86,11 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
   final _pageController = PageController();
   int _currentStep = 0;
   bool _isSubmitting = false;
-  bool _validatingCertificates = false;
   String? _errorMessage;
   bool _obscurePassword = true;
 
-  final _nameController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
@@ -138,7 +138,7 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
   final List<_PendingCertificate> _certificates = [];
   final List<Map<String, dynamic>> _existingCertificateFiles = [];
   static const int _maxCertificates = 5;
-  static const int _maxCertBytes = 2 * 1024 * 1024;
+  static const int _maxCertBytes = 10 * 1024 * 1024;
   bool _loadingSaved = false;
   String? _rejectionReason;
 
@@ -166,6 +166,15 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
   bool get _isReturningApplicant => widget.existingUser != null;
   bool get _canEdit => !_isViewOnly;
 
+  String get _fullName =>
+      '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}'.trim();
+
+  void _applyStoredName(String fullName) {
+    final parts = splitPersonName(fullName);
+    _firstNameController.text = parts.firstName;
+    _lastNameController.text = parts.lastName;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -177,7 +186,7 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
 
     if (_isReturningApplicant) {
       final user = widget.existingUser!;
-      _nameController.text = user.name;
+      _applyStoredName(user.name);
       _emailController.text = user.email;
       _loadSavedApplication();
     }
@@ -401,7 +410,8 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
   @override
   void dispose() {
     _pageController.dispose();
-    _nameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _phoneController.dispose();
@@ -424,8 +434,10 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
 
   bool _validateCurrentStep() {
     if (_currentStep == _accountStepIndex) {
-      final nameError = validateFullName(_nameController.text);
-      if (nameError != null) return _showError(nameError);
+      final firstError = validateGivenName(_firstNameController.text, label: 'First name');
+      if (firstError != null) return _showError(firstError);
+      final lastError = validateGivenName(_lastNameController.text, label: 'Last name');
+      if (lastError != null) return _showError(lastError);
       final emailError = validateEmail(_emailController.text);
       if (emailError != null) return _showError(emailError);
       final passwordError = PasswordUtils.validatePassword(_passwordController.text);
@@ -433,6 +445,12 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
       return true;
     }
     if (_currentStep == _personalStepIndex) {
+      if (_isReapply) {
+        final firstError = validateGivenName(_firstNameController.text, label: 'First name');
+        if (firstError != null) return _showError(firstError);
+        final lastError = validateGivenName(_lastNameController.text, label: 'Last name');
+        if (lastError != null) return _showError(lastError);
+      }
       if (_phoneController.text.trim().isEmpty) return _showError('Phone number is required');
       final digits = _phoneController.text.replaceAll(RegExp(r'\D'), '');
       if (digits.length < 7 || digits.length > 15) {
@@ -454,7 +472,7 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
       }
       if (_certificates.isEmpty && _existingCertificateFiles.isEmpty) {
         return _showError(
-          'Upload at least one certificate photo (JPG or PNG) that clearly shows your first and last name',
+          'Upload at least one certificate',
         );
       }
       if (_selectedSpecializations.isEmpty) {
@@ -951,7 +969,9 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
             );
       } else if (widget.adminCreating) {
         final created = await _apiService.createAdminUser(
-          name: _nameController.text.trim(),
+          name: _fullName,
+          firstName: _firstNameController.text.trim(),
+          lastName: _lastNameController.text.trim(),
           email: _emailController.text.trim(),
           password: _passwordController.text,
           role: 'coach',
@@ -979,7 +999,9 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
         return;
       } else {
         user = await _apiService.registerCoach(
-          name: _nameController.text.trim(),
+          name: _fullName,
+          firstName: _firstNameController.text.trim(),
+          lastName: _lastNameController.text.trim(),
           email: _emailController.text.trim(),
           password: _passwordController.text,
           phone: payload['phone'] as String,
@@ -1222,13 +1244,24 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
           ),
           const SizedBox(height: 20),
           TextField(
-            controller: _nameController,
+            controller: _firstNameController,
             textCapitalization: TextCapitalization.words,
             onChanged: (_) => setState(() {}),
-            decoration: _fieldDecoration('Full Name *', icon: Icons.person_outline).copyWith(
-              errorText: _nameController.text.trim().isEmpty
+            decoration: _fieldDecoration('First Name *', icon: Icons.person_outline).copyWith(
+              errorText: _firstNameController.text.trim().isEmpty
                   ? null
-                  : validateFullName(_nameController.text),
+                  : validateGivenName(_firstNameController.text, label: 'First name'),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _lastNameController,
+            textCapitalization: TextCapitalization.words,
+            onChanged: (_) => setState(() {}),
+            decoration: _fieldDecoration('Last Name *', icon: Icons.badge_outlined).copyWith(
+              errorText: _lastNameController.text.trim().isEmpty
+                  ? null
+                  : validateGivenName(_lastNameController.text, label: 'Last name'),
             ),
           ),
           const SizedBox(height: 16),
@@ -1279,6 +1312,24 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
             style: TextStyle(color: isDark ? Colors.white60 : CoachDashboardTheme.textSecondary),
           ),
           const SizedBox(height: 20),
+          if (_isReapply) ...[
+            TextField(
+              controller: _firstNameController,
+              readOnly: !_canEdit,
+              textCapitalization: TextCapitalization.words,
+              onChanged: (_) => setState(() {}),
+              decoration: _fieldDecoration('First Name *', icon: Icons.person_outline),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _lastNameController,
+              readOnly: !_canEdit,
+              textCapitalization: TextCapitalization.words,
+              onChanged: (_) => setState(() {}),
+              decoration: _fieldDecoration('Last Name *', icon: Icons.badge_outlined),
+            ),
+            const SizedBox(height: 16),
+          ],
           TextField(
             controller: _phoneController,
             readOnly: !_canEdit,
@@ -1340,23 +1391,12 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
     );
   }
 
-  String get _expectedCertificateName {
-    final fromForm = _nameController.text.trim();
-    if (fromForm.isNotEmpty) return fromForm;
-    final user = widget.existingUser;
-    return (user?.name ?? user?.email ?? '').trim();
-  }
+
 
   Future<void> _pickCertificates() async {
     final already = _certificates.length + _existingCertificateFiles.length;
     if (already >= _maxCertificates) {
       _showError('You can upload at most $_maxCertificates certificates');
-      return;
-    }
-
-    final expectedName = _expectedCertificateName;
-    if (expectedName.isEmpty) {
-      _showError('Enter your full name first, then upload a certificate that shows that name.');
       return;
     }
 
@@ -1370,7 +1410,6 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
 
       if (!mounted) return;
       setState(() {
-        _validatingCertificates = true;
         _errorMessage = null;
       });
 
@@ -1379,59 +1418,34 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
       for (final file in files.take(remaining)) {
         final bytes = await file.readAsBytes();
         if (bytes.length > _maxCertBytes) {
-          lastError = '${file.name} exceeds the 2 MB limit';
+          lastError = '${file.name} exceeds the 10 MB limit';
           continue;
         }
         final lower = file.name.toLowerCase();
-        String mime = 'image/jpeg';
-        if (lower.endsWith('.png')) {
-          mime = 'image/png';
-        } else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
-          mime = 'image/jpeg';
-        } else if (lower.endsWith('.webp')) {
-          mime = 'image/webp';
-        } else {
-          mime = 'image/jpeg';
-        }
-
-        if (mime == 'image/webp') {
-          lastError = '${file.name}: use JPG or PNG so your name can be verified';
-          continue;
+        String mime = file.mimeType ?? '';
+        if (mime.isEmpty) {
+          if (lower.endsWith('.png')) {
+            mime = 'image/png';
+          } else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+            mime = 'image/jpeg';
+          } else if (lower.endsWith('.webp')) {
+            mime = 'image/webp';
+          } else if (lower.endsWith('.pdf')) {
+            mime = 'application/pdf';
+          } else {
+            mime = 'application/octet-stream';
+          }
         }
 
         final localName = file.name.isNotEmpty ? file.name : 'certificate.jpg';
         final dataUrl = 'data:$mime;base64,${base64Encode(bytes)}';
-        Map<String, dynamic> validated;
-        try {
-          // Backend uploads to ImageKit first, then OCR-checks the uploaded image.
-          validated = await _apiService.validateCoachCertificate(
-            dataUrl: dataUrl,
-            expectedName: expectedName,
-            fileName: localName,
-          );
-        } catch (e) {
-          lastError = ApiService.friendlyError(e);
-          continue;
-        }
-
-        final remoteUrl = validated['url']?.toString().trim() ?? '';
-        if (remoteUrl.isEmpty) {
-          lastError = 'Certificate upload did not return a file URL. Try again.';
-          continue;
-        }
 
         additions.add(
           _PendingCertificate(
-            fileName: validated['fileName']?.toString().trim().isNotEmpty == true
-                ? validated['fileName'].toString()
-                : localName,
-            mimeType: validated['mimeType']?.toString().trim().isNotEmpty == true
-                ? validated['mimeType'].toString()
-                : mime,
+            fileName: localName,
+            mimeType: mime,
             dataUrl: dataUrl,
             bytes: bytes,
-            uploadedUrl: remoteUrl,
-            uploadedAt: validated['uploadedAt']?.toString(),
           ),
         );
       }
@@ -1440,18 +1454,15 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
       setState(() {
         if (additions.isNotEmpty) {
           _certificates.addAll(additions);
+        }
+        if (lastError != null) {
           _errorMessage = lastError;
-        } else {
-          _errorMessage = lastError ??
-              'Certificate rejected. Upload a clear photo that shows your first and last name ($expectedName).';
         }
       });
     } catch (e) {
       if (mounted) {
         _showError('Could not pick certificates. Try again.');
       }
-    } finally {
-      if (mounted) setState(() => _validatingCertificates = false);
     }
   }
 
@@ -1475,101 +1486,146 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
         Text(
           _isViewOnly
               ? 'Certificates submitted with your application.'
-              : 'Upload a clear JPG/PNG of your certificate. Your first and last name must be visible on the document (like a fitness trainer certificate), max 2 MB each, up to $_maxCertificates.',
+              : 'Upload your certificate files. Max 10 MB each, up to $_maxCertificates.',
           style: TextStyle(color: isDark ? Colors.white60 : CoachDashboardTheme.textSecondary, fontSize: 13),
         ),
         const SizedBox(height: 12),
         if (totalCount > 0)
           SizedBox(
-            height: 110,
+            height: 135,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: totalCount,
               separatorBuilder: (_, __) => const SizedBox(width: 10),
               itemBuilder: (ctx, i) {
                 final isExisting = i < _existingCertificateFiles.length;
+                final fileName = isExisting
+                    ? (_existingCertificateFiles[i]['fileName']?.toString() ?? 'Certificate ${i + 1}')
+                    : _certificates[i - _existingCertificateFiles.length].fileName;
+
                 if (isExisting) {
                   final file = _existingCertificateFiles[i];
                   final url = file['url']?.toString() ?? '';
                   final mime = file['mimeType']?.toString() ?? '';
                   final isPdf = mime.contains('pdf') || url.toLowerCase().endsWith('.pdf');
-                  return Stack(
-                    children: [
-                      Container(
-                        width: 100,
-                        height: 110,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: isDark ? Colors.white12 : Colors.black12),
-                          color: isDark ? Colors.white10 : Colors.grey.shade100,
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: isPdf
-                            ? const Center(child: Icon(Icons.picture_as_pdf_rounded, size: 36))
-                            : Image.network(
-                                url,
-                                fit: BoxFit.cover,
-                                width: 100,
-                                height: 110,
-                                errorBuilder: (_, __, ___) =>
-                                    const Center(child: Icon(Icons.broken_image_outlined)),
+                  return SizedBox(
+                    width: 100,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Stack(
+                          children: [
+                            Container(
+                              width: 100,
+                              height: 100,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: isDark ? Colors.white12 : Colors.black12),
+                                color: isDark ? Colors.white10 : Colors.grey.shade100,
                               ),
-                      ),
-                      if (_canEdit)
-                        Positioned(
-                          top: 4,
-                          right: 4,
-                          child: Material(
-                            color: Colors.black54,
-                            shape: const CircleBorder(),
-                            child: InkWell(
-                              customBorder: const CircleBorder(),
-                              onTap: () => setState(() => _existingCertificateFiles.removeAt(i)),
-                              child: const Padding(
-                                padding: EdgeInsets.all(4),
-                                child: Icon(Icons.close, size: 16, color: Colors.white),
-                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: isPdf
+                                  ? const Center(child: Icon(Icons.picture_as_pdf_rounded, size: 36, color: Colors.redAccent))
+                                  : Image.network(
+                                      url,
+                                      fit: BoxFit.cover,
+                                      width: 100,
+                                      height: 100,
+                                      errorBuilder: (_, __, ___) =>
+                                          const Center(child: Icon(Icons.broken_image_outlined)),
+                                    ),
                             ),
+                            if (_canEdit)
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: Material(
+                                  color: Colors.black54,
+                                  shape: const CircleBorder(),
+                                  child: InkWell(
+                                    customBorder: const CircleBorder(),
+                                    onTap: () => setState(() => _existingCertificateFiles.removeAt(i)),
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(4),
+                                      child: Icon(Icons.close, size: 16, color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          fileName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: isDark ? Colors.white70 : Colors.black87,
                           ),
                         ),
-                    ],
+                      ],
+                    ),
                   );
                 }
+
                 final cert = _certificates[i - _existingCertificateFiles.length];
                 final newIndex = i - _existingCertificateFiles.length;
-                return Stack(
-                  children: [
-                    Container(
-                      width: 100,
-                      height: 110,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: isDark ? Colors.white12 : Colors.black12),
-                        color: isDark ? Colors.white10 : Colors.grey.shade100,
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: cert.isImage
-                          ? Image.memory(cert.bytes, fit: BoxFit.cover, width: 100, height: 110)
-                          : const Center(child: Icon(Icons.picture_as_pdf_rounded, size: 36)),
-                    ),
-                    if (_canEdit)
-                      Positioned(
-                        top: 4,
-                        right: 4,
-                        child: Material(
-                          color: Colors.black54,
-                          shape: const CircleBorder(),
-                          child: InkWell(
-                            customBorder: const CircleBorder(),
-                            onTap: () => _removeCertificate(newIndex),
-                            child: const Padding(
-                              padding: EdgeInsets.all(4),
-                              child: Icon(Icons.close, size: 16, color: Colors.white),
+                return SizedBox(
+                  width: 100,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Stack(
+                        children: [
+                          Container(
+                            width: 100,
+                            height: 100,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: isDark ? Colors.white12 : Colors.black12),
+                              color: isDark ? Colors.white10 : Colors.grey.shade100,
                             ),
+                            clipBehavior: Clip.antiAlias,
+                            child: cert.isImage
+                                ? Image.memory(cert.bytes, fit: BoxFit.cover, width: 100, height: 100)
+                                : const Center(child: Icon(Icons.picture_as_pdf_rounded, size: 36, color: Colors.redAccent)),
                           ),
+                          if (_canEdit)
+                            Positioned(
+                              top: 4,
+                              right: 4,
+                              child: Material(
+                                color: Colors.black54,
+                                shape: const CircleBorder(),
+                                child: InkWell(
+                                  customBorder: const CircleBorder(),
+                                  onTap: () => _removeCertificate(newIndex),
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(4),
+                                    child: Icon(Icons.close, size: 16, color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        cert.fileName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: isDark ? Colors.white70 : Colors.black87,
                         ),
                       ),
-                  ],
+                    ],
+                  ),
                 );
               },
             ),
@@ -1577,9 +1633,7 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
         if (totalCount > 0) const SizedBox(height: 12),
         if (_canEdit) ...[
           OutlinedButton.icon(
-            onPressed: (totalCount >= _maxCertificates || _validatingCertificates)
-                ? null
-                : _pickCertificates,
+            onPressed: totalCount >= _maxCertificates ? null : _pickCertificates,
             icon: const Icon(Icons.upload_file_rounded),
             label: Text(
               (totalCount == 0 ? 'Upload certificates' : 'Add more certificates'),
@@ -2146,7 +2200,8 @@ class _CoachRegisterScreenState extends State<CoachRegisterScreen> {
           ],
           const SizedBox(height: 20),
           _reviewCard(isDark, 'Account', [
-            _reviewRow('Name', _nameController.text),
+            _reviewRow('First name', _firstNameController.text),
+            _reviewRow('Last name', _lastNameController.text),
             _reviewRow('Email', _emailController.text),
           ]),
           _reviewCard(isDark, 'Personal', [

@@ -591,7 +591,9 @@ class ApiService {
   /// Returns `{ url, fileName, mimeType, uploadedAt, matchedName }`.
   Future<Map<String, dynamic>> validateCoachCertificate({
     required String dataUrl,
-    required String expectedName,
+    String? firstName,
+    String? lastName,
+    String? expectedName,
     String? fileName,
   }) async {
     try {
@@ -601,7 +603,9 @@ class ApiService {
             headers: _headers(),
             body: jsonEncode({
               'dataUrl': dataUrl,
-              'expectedName': expectedName.trim(),
+              if ((firstName ?? '').trim().isNotEmpty) 'firstName': firstName!.trim(),
+              if ((lastName ?? '').trim().isNotEmpty) 'lastName': lastName!.trim(),
+              if ((expectedName ?? '').trim().isNotEmpty) 'expectedName': expectedName!.trim(),
               if (fileName != null && fileName.trim().isNotEmpty) 'fileName': fileName.trim(),
             }),
           )
@@ -622,6 +626,8 @@ class ApiService {
 
   Future<User> registerCoach({
     required String name,
+    String? firstName,
+    String? lastName,
     required String email,
     required String password,
     required String phone,
@@ -645,6 +651,8 @@ class ApiService {
         headers: _headers(),
         body: jsonEncode({
           'name': name.trim(),
+          if ((firstName ?? '').trim().isNotEmpty) 'firstName': firstName!.trim(),
+          if ((lastName ?? '').trim().isNotEmpty) 'lastName': lastName!.trim(),
           'email': PasswordUtils.normalizeEmail(email),
           'username': PasswordUtils.normalizeEmail(email),
           'password': password,
@@ -2571,6 +2579,8 @@ class ApiService {
 
   Future<Map<String, dynamic>> createAdminUser({
     required String name,
+    String? firstName,
+    String? lastName,
     required String email,
     required String password,
     String role = 'user',
@@ -2596,6 +2606,8 @@ class ApiService {
     final payload = <String, dynamic>{
       'name': name.trim(),
       'full_name': name.trim(),
+      if ((firstName ?? '').trim().isNotEmpty) 'firstName': firstName!.trim(),
+      if ((lastName ?? '').trim().isNotEmpty) 'lastName': lastName!.trim(),
       'email': PasswordUtils.normalizeEmail(email),
       'username': PasswordUtils.normalizeEmail(email),
       'password': password,

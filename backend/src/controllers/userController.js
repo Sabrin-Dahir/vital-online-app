@@ -884,12 +884,21 @@ async function submitCoachApplication(req, res) {
     const locationStored = matchSomaliaRegion(location);
 
     const { resolveCertificateFiles, requireCertificateFiles } = require('../utils/certificateUpload');
+    const { resolveCoachPersonName } = require('../utils/fieldValidation');
     let uploadedCertificates = [];
     try {
       requireCertificateFiles(certificateFiles);
+      const person = resolveCoachPersonName({
+        firstName: req.body.firstName || req.body.first_name,
+        lastName: req.body.lastName || req.body.last_name,
+        full_name: req.user.full_name,
+        name: req.user.full_name || req.user.name,
+      });
       uploadedCertificates = await resolveCertificateFiles(certificateFiles, {
         userId: String(req.user._id),
-        expectedName: req.user.full_name || req.user.name || '',
+        firstName: person.firstName,
+        lastName: person.lastName,
+        expectedName: person.fullName,
       });
     } catch (certError) {
       return res.status(400).json({ message: certError.message, code: certError.code });

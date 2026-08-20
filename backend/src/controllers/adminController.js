@@ -997,8 +997,13 @@ function enrichCoachApplicationDoc(app) {
     profile?.certificateFiles,
     app.user?.coachData?.certificateFiles,
   );
+  const { splitPersonName } = require('../utils/fieldValidation');
+  const userName = app.user?.full_name || app.user?.name || '';
+  const { firstName, lastName } = splitPersonName(userName);
   return {
     ...app,
+    firstName,
+    lastName,
     certificateFiles,
     profile: {
       ...profile,

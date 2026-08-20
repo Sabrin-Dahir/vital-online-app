@@ -30,7 +30,7 @@ function getImageKit() {
 }
 
 const DATA_URL_RE = /^data:image\/(png|jpe?g|webp|gif);base64,/i;
-const FILE_DATA_URL_RE = /^data:(image\/(png|jpe?g|webp|gif)|application\/pdf);base64,/i;
+const FILE_DATA_URL_RE = /^data:([^;]+);base64,/i;
 const HTTP_URL_RE = /^https?:\/\//i;
 
 function isDataUrl(value) {
@@ -46,13 +46,17 @@ function isHttpUrl(value) {
 }
 
 function extensionFromDataUrl(dataUrl) {
-  const match = String(dataUrl).match(/^data:(image\/(png|jpe?g|webp|gif)|application\/pdf);base64,/i);
-  if (!match) return 'jpg';
+  const match = String(dataUrl).match(/^data:([^;]+);base64,/i);
+  if (!match) return 'bin';
   const mime = match[1].toLowerCase();
   if (mime === 'application/pdf') return 'pdf';
-  const type = mime.replace('image/', '');
-  if (type === 'jpeg' || type === 'jpg') return 'jpg';
-  return type;
+  if (mime.startsWith('image/')) {
+    const type = mime.replace('image/', '');
+    if (type === 'jpeg' || type === 'jpg') return 'jpg';
+    return type;
+  }
+  const parts = mime.split('/');
+  return parts[1] || 'bin';
 }
 
 function mimeFromDataUrl(dataUrl) {
@@ -105,7 +109,7 @@ async function uploadFileDataUrl(dataUrl, {
   if (isHttpUrl(value)) return value;
 
   if (!isFileDataUrl(value)) {
-    const err = new Error('File must be a JPG, PNG, or PDF data URL, or an https URL');
+    const err = new Error('File must be a base64 data URL, or an https URL');
     err.code = 'INVALID_FILE';
     throw err;
   }
@@ -117,7 +121,7 @@ async function uploadFileDataUrl(dataUrl, {
     : `${fileNamePrefix}_${Date.now()}.${ext}`;
   const finalName = resolvedName.endsWith(`.${ext}`) ? resolvedName : `${resolvedName}.${ext}`;
   const buffer = Buffer.from(base64FromDataUrl(value), 'base64');
-  const maxBytes = Number(process.env.MAX_UPLOAD_BYTES) || 5 * 1024 * 1024;
+  const maxBytes = Number(process.env.MAX_UPLOAD_BYTES) || 10 * 1024 * 1024;
   if (buffer.length > maxBytes) {
     const err = new Error(`File is too large. Maximum size is ${Math.round(maxBytes / (1024 * 1024))} MB`);
     err.code = 'FILE_TOO_LARGE';

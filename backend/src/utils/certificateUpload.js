@@ -11,12 +11,13 @@ const CoachApplication = require('../models/CoachApplication');
 const User = require('../models/User');
 
 const MAX_CERTIFICATES = 5;
-const MAX_BYTES_PER_FILE = 2 * 1024 * 1024; // 2 MB decoded
+const MAX_BYTES_PER_FILE = 10 * 1024 * 1024; // 10 MB decoded
 
 const ALLOWED_MIME = new Set([
   'image/jpeg',
   'image/jpg',
   'image/png',
+  'image/webp',
   'application/pdf',
 ]);
 
@@ -88,9 +89,9 @@ async function ownedCertificateUrls(userId) {
  * Returns [{ url, fileName, mimeType, uploadedAt }]
  *
  * New image uploads go to ImageKit first, then OCR checks first + last name
- * on the uploaded file (and matches expectedName when provided).
+ * on the uploaded file. Unreadable scans are kept for admin review.
  */
-async function resolveCertificateFiles(input, { userId, expectedName } = {}) {
+async function resolveCertificateFiles(input, { userId, firstName, lastName, expectedName } = {}) {
   if (input == null) return [];
   if (!Array.isArray(input)) {
     const err = new Error('certificateFiles must be an array');
@@ -136,23 +137,16 @@ async function resolveCertificateFiles(input, { userId, expectedName } = {}) {
         throw err;
       }
       const urlLooksPdf = dataUrl.toLowerCase().includes('.pdf');
-      // Prefer URL shape over client-supplied mimeType (clients can falsely claim application/pdf).
       const mimeType = urlLooksPdf
         ? 'application/pdf'
         : (typeof item === 'object' && item?.mimeType && !String(item.mimeType).includes('pdf')
           ? String(item.mimeType)
           : 'image/jpeg');
-      // Already-saved certificates skip OCR; newly supplied CDN image URLs must pass name check.
-      // Never skip OCR because the client labeled an image URL as PDF.
-      if (nameCheckEnabled && !ownedUrls.has(dataUrl)) {
-        if (urlLooksPdf || String(mimeType).includes('pdf')) {
-          const err = new Error(
-            `Certificate #${i + 1} must be a JPG or PNG photo that clearly shows your first and last name.`,
-          );
-          err.code = 'CERTIFICATE_NAME_REQUIRED';
-          throw err;
-        }
+      // Already-saved certificates skip OCR. PDFs / unreadable scans go to admin review.
+      if (nameCheckEnabled && !ownedUrls.has(dataUrl) && !urlLooksPdf && !String(mimeType).includes('pdf')) {
         await assertCertificateImageShowsName(dataUrl, {
+          firstName,
+          lastName,
           expectedName,
           index: i + 1,
         });
@@ -167,31 +161,17 @@ async function resolveCertificateFiles(input, { userId, expectedName } = {}) {
     }
 
     if (!isFileDataUrl(dataUrl)) {
-      const err = new Error(`Certificate #${i + 1} must be JPG or PNG`);
+      const err = new Error(`Certificate #${i + 1} is invalid`);
       err.code = 'INVALID_CERTIFICATES';
       throw err;
     }
 
-    const mimeType = mimeFromDataUrl(dataUrl);
+    const mimeType = mimeFromDataUrl(dataUrl) || 'application/octet-stream';
     const normalizedMime = mimeType === 'image/jpg' ? 'image/jpeg' : mimeType;
-    if (!ALLOWED_MIME.has(mimeType) && mimeType !== 'image/jpg') {
-      const err = new Error(`Certificate #${i + 1} must be JPG or PNG`);
-      err.code = 'INVALID_CERTIFICATES';
-      throw err;
-    }
-
-    // Name OCR only supports images — block new PDF uploads when validation is on.
-    if (nameCheckEnabled && normalizedMime === 'application/pdf') {
-      const err = new Error(
-        `Certificate #${i + 1} must be a JPG or PNG photo that clearly shows your first and last name.`,
-      );
-      err.code = 'CERTIFICATE_NAME_REQUIRED';
-      throw err;
-    }
 
     const size = estimateBase64Bytes(dataUrl);
     if (size > MAX_BYTES_PER_FILE) {
-      const err = new Error(`Certificate #${i + 1} exceeds the 2 MB size limit`);
+      const err = new Error(`Certificate #${i + 1} exceeds the 10 MB size limit`);
       err.code = 'CERTIFICATE_TOO_LARGE';
       throw err;
     }
@@ -208,6 +188,8 @@ async function resolveCertificateFiles(input, { userId, expectedName } = {}) {
 
     if (nameCheckEnabled && normalizedMime.startsWith('image/')) {
       await assertCertificateImageShowsName(url, {
+        firstName,
+        lastName,
         expectedName,
         index: i + 1,
       });
@@ -227,7 +209,7 @@ async function resolveCertificateFiles(input, { userId, expectedName } = {}) {
 function requireCertificateFiles(files) {
   if (!Array.isArray(files) || files.length === 0) {
     const err = new Error(
-      'Upload at least one professional certificate photo (JPG or PNG) that clearly shows your first and last name',
+      'Upload at least one professional certificate',
     );
     err.code = 'CERTIFICATES_REQUIRED';
     throw err;

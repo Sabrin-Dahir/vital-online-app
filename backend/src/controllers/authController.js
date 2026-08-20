@@ -350,9 +350,9 @@ async function registerCoach(req, res) {
 }
 
 /**
- * Upload a certificate image, then OCR-check the uploaded file for first + last name.
- * Body: { certificateFile | dataUrl | file, expectedName?, fileName? }
- * Returns CDN url on success so the client can attach the already-uploaded file.
+ * Upload a certificate, then check it for the coach's first + last name.
+ * Body: { certificateFile | dataUrl | file, firstName, lastName, expectedName?, fileName? }
+ * Unreadable scans are accepted for admin review instead of being rejected.
  */
 async function validateCoachCertificate(req, res) {
   try {
@@ -360,21 +360,21 @@ async function validateCoachCertificate(req, res) {
       isNameValidationEnabled,
       assertCertificateImageShowsName,
     } = require('../utils/certificateNameValidation');
+    const { resolveCoachPersonName, validateCoachPersonName } = require('../utils/fieldValidation');
     const {
       isFileDataUrl,
       mimeFromDataUrl,
       extensionFromDataUrl,
       uploadFileDataUrl,
     } = require('../utils/imageKit');
+    const { MAX_BYTES_PER_FILE } = require('../utils/certificateUpload');
 
     const raw = req.body?.certificateFile ?? req.body?.dataUrl ?? req.body?.file ?? req.body?.url;
     const dataUrl = typeof raw === 'string'
       ? raw.trim()
       : String(raw?.dataUrl || raw?.url || raw?.file || '').trim();
-    const expectedName = String(
-      req.body?.expectedName || req.body?.name || req.body?.full_name || '',
-    ).trim();
-    const fileNameHint = String(req.body?.fileName || req.body?.name || '').trim();
+    const person = resolveCoachPersonName(req.body);
+    const fileNameHint = String(req.body?.fileName || '').trim();
 
     if (!dataUrl) {
       return res.status(400).json({
@@ -384,30 +384,36 @@ async function validateCoachCertificate(req, res) {
     }
     if (!isFileDataUrl(dataUrl)) {
       return res.status(400).json({
-        message: 'Certificate must be a JPG or PNG image',
+        message: 'Certificate file is invalid',
         code: 'INVALID_CERTIFICATES',
       });
     }
 
-    const mimeType = mimeFromDataUrl(dataUrl);
+    const mimeType = mimeFromDataUrl(dataUrl) || 'application/octet-stream';
     const normalizedMime = mimeType === 'image/jpg' ? 'image/jpeg' : mimeType;
-    if (!normalizedMime.startsWith('image/') || normalizedMime === 'application/pdf') {
+    const isPdf = normalizedMime === 'application/pdf';
+    const isImage = normalizedMime.startsWith('image/');
+
+    const nameError = validateCoachPersonName(person);
+    if (nameError) {
       return res.status(400).json({
-        message: 'Certificate must be a JPG or PNG photo that clearly shows your first and last name.',
+        message: nameError,
         code: 'CERTIFICATE_NAME_REQUIRED',
       });
     }
 
-    if (!expectedName) {
+    const comma = dataUrl.indexOf(',');
+    const b64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+    const estimatedBytes = Math.floor((b64.length * 3) / 4);
+    if (estimatedBytes > MAX_BYTES_PER_FILE) {
       return res.status(400).json({
-        message: 'Enter your full name first, then upload a certificate that shows that name.',
-        code: 'CERTIFICATE_NAME_REQUIRED',
+        message: 'Certificate exceeds the 2 MB size limit',
+        code: 'CERTIFICATE_TOO_LARGE',
       });
     }
 
     const ext = extensionFromDataUrl(dataUrl);
     const fileName = fileNameHint || `certificate.${ext}`;
-    // 1) Upload to ImageKit first
     const url = await uploadFileDataUrl(dataUrl, {
       folder: '/vital/certificates',
       fileNamePrefix: 'cert_pending',
@@ -415,19 +421,23 @@ async function validateCoachCertificate(req, res) {
       tags: ['certificate', 'coach', 'pending-validation'],
     });
 
-    // 2) OCR the uploaded image (skip only if validation disabled)
-    let matchedName = null;
-    if (isNameValidationEnabled()) {
+    let matchedName = `${person.firstName} ${person.lastName}`;
+    let needsAdminReview = isPdf;
+    if (isNameValidationEnabled() && isImage) {
       const result = await assertCertificateImageShowsName(url, {
-        expectedName,
+        firstName: person.firstName,
+        lastName: person.lastName,
+        expectedName: person.fullName,
         index: 1,
       });
-      matchedName = result.matchedName || null;
+      matchedName = result.matchedName || matchedName;
+      needsAdminReview = Boolean(result.unverified);
     }
 
     return res.json({
       ok: true,
       matchedName,
+      needsAdminReview,
       url,
       fileName,
       mimeType: normalizedMime,
