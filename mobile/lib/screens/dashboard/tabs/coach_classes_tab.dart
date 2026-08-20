@@ -78,16 +78,19 @@ class CoachClassesTabState extends State<CoachClassesTab> with SingleTickerProvi
     final titleCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     final capacityCtrl = TextEditingController(text: '20');
-    String category = 'General';
-    List<String> categories = allowedClassCategories(null);
+    String category = 'General Fitness';
+    List<String> categories = allowedClassCategories(['General Fitness']);
     DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
     TimeOfDay selectedTime = const TimeOfDay(hour: 9, minute: 0);
     int duration = 60;
 
     try {
       final me = await _apiService.getMe();
-      categories = allowedClassCategories(coachSpecializationsFromUser(me));
-      category = categories.isNotEmpty ? categories.first : 'General Fitness';
+      final fetched = allowedClassCategories(coachSpecializationsFromUser(me));
+      if (fetched.isNotEmpty) {
+        categories = fetched;
+      }
+      category = categories.contains(category) ? category : (categories.isNotEmpty ? categories.first : 'General Fitness');
     } catch (_) {}
 
     if (!mounted) return;
@@ -128,7 +131,7 @@ class CoachClassesTabState extends State<CoachClassesTab> with SingleTickerProvi
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: categories.contains(category) ? category : categories.first,
+                        value: categories.contains(category) ? category : (categories.isNotEmpty ? categories.first : category),
                         decoration: const InputDecoration(labelText: 'Category', border: OutlineInputBorder()),
                         items: categories
                             .map((c) => DropdownMenuItem(value: c, child: Text(c)))
@@ -199,6 +202,8 @@ class CoachClassesTabState extends State<CoachClassesTab> with SingleTickerProvi
                               selectedTime.hour,
                               selectedTime.minute,
                             );
+                            // Capture parent scaffold context before async gap.
+                            final scaffoldContext = this.context;
                             try {
                               await _apiService.createCoachClass({
                                 'title': titleCtrl.text.trim(),
@@ -208,15 +213,22 @@ class CoachClassesTabState extends State<CoachClassesTab> with SingleTickerProvi
                                 'durationMinutes': duration,
                                 'capacity': int.tryParse(capacityCtrl.text) ?? 20,
                               });
+                              // Close the modal using the modal's own context.
                               if (context.mounted) Navigator.pop(context);
-                              _fetchData();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Class created!'), backgroundColor: Colors.green),
-                              );
+                              // Refresh list and show success using parent context.
+                              if (mounted) {
+                                await _fetchData(isRefresh: true);
+                                ScaffoldMessenger.of(scaffoldContext).showSnackBar(
+                                  const SnackBar(content: Text('Class created!'), backgroundColor: Colors.green),
+                                );
+                              }
                             } catch (e) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(ApiService.friendlyError(e)), backgroundColor: Colors.redAccent),
-                              );
+                              // Keep modal open on failure; show error inside modal context.
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(ApiService.friendlyError(e)), backgroundColor: Colors.redAccent),
+                                );
+                              }
                             }
                           },
                           child: const Text('Create Class'),

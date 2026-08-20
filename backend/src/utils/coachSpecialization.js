@@ -286,7 +286,14 @@ function getCoachSpecializations(user) {
   const fromProfile = normalizeSpecializationList(user.profile?.specialization);
   if (fromProfile.length) return fromProfile;
 
-  return normalizeSpecializationList(user.specialization);
+  const fromUser = normalizeSpecializationList(user.specialization);
+  if (fromUser.length) return fromUser;
+
+  if (user.role === 'coach') {
+    return ['General Fitness'];
+  }
+
+  return [];
 }
 
 /** @deprecated Prefer getCoachSpecializations — returns first specialization for legacy callers. */
